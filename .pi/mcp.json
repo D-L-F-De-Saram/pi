@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "de-saram-legal": {
+      "command": "node",
+      "args": ["junior-de-saram/mcp/server.mjs"],
+      "cwd": ".",
+      "exposure": "direct",
+      "timeout": 1200,
+      "description": "Firm knowledge-base research, document drafting and public web search for D. L. & F. De Saram."
+    }
+  }
+}

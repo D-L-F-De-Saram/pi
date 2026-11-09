@@ -1,0 +1,22 @@
+services:
+  junior-de-saram:
+    build: .
+    image: junior-de-saram:local
+    container_name: junior-de-saram
+    env_file: .env
+    environment:
+      JUNIOR_DE_SARAM_LOG_ROOT: /data/logs
+    ports:
+      - "127.0.0.1:8160:8160"
+    volumes:
+      - junior_de_saram_sessions:/data/sessions
+      - ./junior-de-saram/logs:/data/logs
+    networks:
+      - librechat
+    restart: unless-stopped
+volumes:
+  junior_de_saram_sessions:
+networks:
+  librechat:
+    external: true
+    name: librechat_default

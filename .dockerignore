@@ -1,0 +1,10 @@
+.git
+.env
+node_modules
+**/node_modules
+**/dist
+plan.md
+junior-de-saram/sessions
+junior-de-saram-upstream-tmp
+
+junior-de-saram/logs
