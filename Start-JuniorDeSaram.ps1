@@ -4,4 +4,9 @@ $linuxDir = (& wsl.exe wslpath -a $PSScriptRoot | Out-String).Trim()
 if (-not $linuxDir) { throw 'Could not resolve the checkout in WSL.' }
 & wsl.exe --cd $linuxDir docker compose up -d --no-deps junior-de-saram
 if ($LASTEXITCODE -ne 0) { throw 'Junior De Saram container did not start.' }
-& wsl.exe docker exec -it junior-de-saram node packages/coding-agent/dist/bundle/cli.js --approve --provider google --model gemini-3.7-flash --thinking low --no-builtin-tools --no-context-files --no-skills --skill .agents/skills/de-saram-legal-final-answer/SKILL.md --no-extensions --extension builtin:mcp --extension .pi/extensions/junior-de-saram-context.ts --extension .pi/extensions/de-saram-delivery.ts @args
+if (Select-String -LiteralPath (Join-Path $PSScriptRoot '.env') -Pattern '^DESARAM_TYPESENSE_URL=http://127\.0\.0\.1:18108\s*$' -Quiet) {
+  $sshUser = (& wsl.exe id -un | Out-String).Trim()
+  & wsl.exe -u root --cd $linuxDir sh ./Connect-DeSaramSources.sh $sshUser
+  if ($LASTEXITCODE -ne 0) { throw 'Could not connect De Saram indexed sources.' }
+}
+& wsl.exe docker exec -it junior-de-saram node junior-de-saram/cli.mjs @args

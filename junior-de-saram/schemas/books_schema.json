@@ -1,0 +1,58 @@
+{
+  "name": "legal_books",
+  "fields": [
+    {"name": "id", "type": "string"},
+    {"name": "book_id", "type": "string", "facet": true},
+    {"name": "book_title", "type": "string", "facet": true},
+    {"name": "authors", "type": "string[]", "facet": true},
+    {"name": "publication_year", "type": "int32", "optional": true},
+    {"name": "practice_area", "type": "string", "facet": true, "optional": true},
+    {"name": "part_title", "type": "string", "facet": true, "optional": true},
+    {"name": "chapter_number", "type": "int32"},
+    {"name": "chapter_title", "type": "string", "facet": true},
+    {"name": "section_title", "type": "string", "optional": true},
+    {"name": "markdown_path", "type": "string", "optional": true},
+    {"name": "chunk_index", "type": "int32"},
+    {"name": "chunk_count", "type": "int32"},
+    {"name": "text", "type": "string"},
+    {"name": "pages", "type": "int32[]"},
+    {"name": "start_page", "type": "int32"},
+    {"name": "end_page", "type": "int32"},
+    {"name": "headings", "type": "string[]", "facet": true},
+    {"name": "title_of_document", "type": "string", "optional": true},
+    {"name": "short_summary", "type": "string", "optional": true},
+    {"name": "document_type", "type": "string", "facet": true, "optional": true},
+    {"name": "legal_topics.practice_area", "type": "string[]", "facet": true, "optional": true},
+    {"name": "legal_topics.department", "type": "string[]", "facet": true, "optional": true},
+    {"name": "legal_topics.industries", "type": "string[]", "facet": true, "optional": true},
+    {"name": "keywords", "type": "string[]", "optional": true},
+    {"name": "jurisdictions", "type": "string[]", "facet": true, "optional": true},
+    {"name": "source_organization", "type": "string", "facet": true, "optional": true},
+    {"name": "canonical_source_url", "type": "string", "optional": true},
+    {"name": "extracted_timestamp", "type": "int64", "optional": true},
+    {"name": "metadata_extracted_timestamp", "type": "int64", "optional": true},
+    {"name": "indexed_timestamp", "type": "int64", "optional": true},
+    {"name": "content_hash", "type": "string", "optional": true, "index": false},
+    {"name": "metadata_extractor_version", "type": "string", "optional": true},
+    {"name": "metadata_model", "type": "string", "optional": true, "index": false},
+    {"name": "metadata_source_pages", "type": "int32[]", "optional": true},
+    {"name": "metadata_confidence", "type": "float", "optional": true},
+    {"name": "validation_status", "type": "string", "facet": true, "optional": true},
+    {"name": "validation_errors", "type": "string[]", "optional": true, "index": false},
+    {"name": "edition", "type": "string", "optional": true},
+    {"name": "publisher", "type": "string", "facet": true, "optional": true},
+    {"name": "isbn", "type": "string[]", "optional": true},
+    {
+      "name": "embedding",
+      "type": "float[]",
+      "embed": {
+        "from": ["text"],
+        "model_config": {
+          "model_name": "ts/nomic-embed-text-v1.5"
+        }
+      }
+    }
+  ],
+  "default_sorting_field": "chunk_index",
+  "enable_nested_fields": true
+}

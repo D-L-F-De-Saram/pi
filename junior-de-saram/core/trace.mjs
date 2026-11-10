@@ -2,14 +2,18 @@ import { createHash, randomUUID } from 'node:crypto';
 import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const root = path.resolve(process.env.JUNIOR_DE_SARAM_LOG_ROOT || './junior-de-saram/logs');
+const root = () => path.resolve(process.env.JUNIOR_DE_SARAM_LOG_ROOT || './junior-de-saram/logs');
 const maxBytes = Math.max(1024, Number(process.env.JUNIOR_DE_SARAM_LOG_MAX_VALUE_BYTES || 262144));
-const secretKeys = /(?:^|_)(?:api_key|authorization|secret|password|credential|cookie|signature|access_token|refresh_token|id_token|bearer_token|token)(?:$|_)/i;
+const secretKeys = /(?:^|_)(?:key|api_key|authorization|secret|password|credential|cookie|signature|access_token|refresh_token|id_token|bearer_token|token)(?:$|_)/i;
 const inlineSecrets = /\b(?:sk-[A-Za-z0-9_-]{16,}|AIza[A-Za-z0-9_-]{16,})\b/g;
-const querySecrets = /([?&](?:api[_-]?key|authorization|secret|token|password|signature)=)[^&#\s]+/gi;
+// Stop before HTML / JSON delimiters as well as URI delimiters. Otherwise a
+// signed preview URL in a logged HTML fragment could consume the following
+// image tags and make an otherwise valid preview look malformed in the trace.
+const querySecrets = /([?&](?:api[_-]?key|authorization|secret|token|password|signature)=)[^&#\s"'<>\\]+/gi;
+const safeMetadataKeys = new Set(['conversation_key']);
 
 function clean(value, key = '') {
-  if (secretKeys.test(String(key).replace(/([a-z])([A-Z])/g, '$1_$2'))) return '[REDACTED]';
+  if (!safeMetadataKeys.has(key) && secretKeys.test(String(key).replace(/([a-z])([A-Z])/g, '$1_$2'))) return '[REDACTED]';
   if (typeof value === 'string') {
     let text = value;
     for (const [envKey, secret] of Object.entries(process.env)) if (secretKeys.test(envKey) && secret?.length >= 8) text = text.split(secret).join('[REDACTED]');
@@ -24,7 +28,7 @@ function clean(value, key = '') {
 export function createTrace({ id = `chatcmpl-${randomUUID()}`, key, query, model, provider, thinking }) {
   const start = Date.now();
   const stamp = new Date(start).toISOString();
-  const dir = path.join(root, 'traces', stamp.slice(0, 10), id);
+  const dir = path.join(root(), 'traces', stamp.slice(0, 10), id);
   const trace = { schema_version: 1, trace: { request_id: id, session_id: `junior-de-saram-${key}`, conversation_key: `junior-de-saram-${key}`, source: 'junior-de-saram', started_at: stamp, outcome: 'running' }, request: { model, provider, thinking, original_query: clean(query), attachments: [] }, timeline: [], llm_calls: [], tool_calls: [], final: undefined };
   const pending = new Map();
   let queue = Promise.resolve();
@@ -36,6 +40,9 @@ export function createTrace({ id = `chatcmpl-${randomUUID()}`, key, query, model
       if (eventData.type === 'tool_execution_start') {
         const item = { id: eventData.toolCallId, name: eventData.toolName, started_at: new Date().toISOString(), status: 'running', request: clean(eventData.args), updates: [] };
         trace.tool_calls.push(item); pending.set(item.id, item); event('tool_started', { tool: item.name, tool_call_id: item.id });
+      } else if (eventData.type === 'tool_execution_update') {
+        const item = pending.get(eventData.toolCallId);
+        if (item) { item.updates.push(clean(eventData.partialResult)); event('tool_updated', { tool: item.name, tool_call_id: item.id }); }
       } else if (eventData.type === 'tool_execution_end') {
         const item = pending.get(eventData.toolCallId);
         if (item) { item.status = eventData.isError ? 'error' : 'completed'; item.ended_at = new Date().toISOString(); item.duration_ms = Date.now() - Date.parse(item.started_at); item.response = clean(eventData.result); event(item.status === 'error' ? 'tool_error' : 'tool_completed', { tool: item.name, tool_call_id: item.id, duration_ms: item.duration_ms }); }
@@ -47,7 +54,7 @@ export function createTrace({ id = `chatcmpl-${randomUUID()}`, key, query, model
     },
     async finish({ answer, usage, error }) {
       trace.trace.ended_at = new Date().toISOString(); trace.trace.elapsed_ms = Date.now() - start; trace.trace.outcome = error ? 'error' : 'completed';
-      trace.final = clean({ answer, usage, error, artifacts: [...String(answer || '').matchAll(/https?:\/\/[^\s)]+\.docx(?:\?[^\s)]*)?/g)].map((match) => ({ download_url: match[0] })), previews: String(answer || '').includes(':::artifact{') ? [{ status: 'completed' }] : [] });
+      trace.final = clean({ answer, usage, error, artifacts: [...String(answer || '').matchAll(/https?:\/\/[^\s)]+\.(?:docx|pdf|pptx|xlsx|md|txt|json)(?:\?[^\s)]*)?/g)].map((match) => ({ download_url: match[0] })), previews: String(answer || '').includes(':::artifact{') ? [{ status: 'completed' }] : [] });
       event(error ? 'request_error' : 'request_completed', { elapsed_ms: trace.trace.elapsed_ms, tool_count: trace.tool_calls.length, llm_call_count: trace.llm_calls.length });
       await queue;
     },

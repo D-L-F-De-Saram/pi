@@ -4,6 +4,8 @@ Each LibreChat request creates a `trace.json` and an `events.jsonl` under `junio
 
 The trace files contain user queries, legal documents and responses. Keep the log directory private and do not commit or publish it.
 
+Interactive CLI turns now use the same trace schema through `.pi/extensions/junior-de-saram-local-trace.ts`. Built-in file/code tools, direct retrieval, calculations and artifact publication are recorded with their arguments, responses, errors and elapsed time. Tool progress updates are retained. External researcher/drafter usage is retained in tool structured results when the upstream reports it; it is separate from Pi's own model usage. Generated PDF/PPTX/XLSX/DOCX/Markdown download links and preview presence are recorded in the final section. Credential values and signed link tokens are redacted. Large values are bounded by `JUNIOR_DE_SARAM_LOG_MAX_VALUE_BYTES`; redaction and truncation also apply to tool outputs.
+
 ## Inspect a local trace
 
 From WSL at this checkout:

@@ -1,0 +1,14 @@
+{
+  "name": "junior-de-saram-document-runtime",
+  "private": true,
+  "dependencies": {
+    "docx": "9.5.1",
+    "pi-monorepo": "file:..",
+    "playwright": "1.56.1",
+    "pptxgenjs": "4.0.1",
+    "sharp": "0.35.5"
+  },
+  "overrides": {
+    "image-size": "2.0.3"
+  }
+}
