@@ -8,8 +8,10 @@ import { restoreCitations } from '../core/citations.mjs';
 import { createTrace } from '../core/trace.mjs';
 import { startChatStream, streamChatDelta as delta, finishChatStream as finish } from '../core/chat-stream.mjs';
 import { runtimeArgs } from '../core/runtime.mjs';
+import { availablePiModels, resolvePiModel } from '../core/pi-models.mjs';
 import { artifactDownload, workspaceRoot } from '../core/artifacts.mjs';
-import { sourceCitationText } from '../core/source-citations.mjs';
+import { publicCitationText, sourceCitationText } from '../core/source-citations.mjs';
+import { conversationKey, conversationUploadPaths, fileCandidates, piPrompt, saveUploads, textUploads } from '../core/uploads.mjs';
 
 const port = Number(process.env.JUNIOR_DE_SARAM_PORT || 8160);
 const modelName = process.env.JUNIOR_DE_SARAM_MODEL_NAME || 'junior-de-saram-pi';
@@ -42,6 +44,7 @@ function labelForTool(name) {
   if (/firm_research$/.test(name)) return 'Searching the firm’s knowledge base and checking legal sources…';
   if (/document_drafter$/.test(name)) return 'Preparing the requested legal document with the firm drafter…';
   if (/public_web_search$/.test(name)) return 'Checking current public sources for relevant developments…';
+  if (/deep_public_web_research$/.test(name)) return 'Comparing public sources and reading the relevant passages…';
   if (/prepare_document_preview$/.test(name)) return 'Preparing a preview of the completed document…';
   return 'Checking the legal work before responding…';
 }
@@ -70,17 +73,16 @@ function thoughtController(send) {
     tick() { const elapsed = Date.now() - since; const milestone = [20000, 60000, 120000].find((n) => elapsed >= n && !milestones.has(n)); if (!milestone) return; milestones.add(milestone); const subject = /document_drafter|preview/.test(phase) ? 'document' : /research|web_search/.test(phase) ? 'source check' : 'legal work'; publish(milestone === 20000 ? `The ${subject} is still being prepared…` : milestone === 60000 ? `The ${subject} is taking longer than usual; I’m continuing the checks…` : `Still working on the ${subject}; I’ll continue when this step finishes…`); },
   };
 }
-async function run(body, sessionId, onProgress, trace) {
+async function run(sessionId, prompt, onProgress, trace, selectedModel, selectedEffort) {
   await mkdir(sessions, { recursive: true });
   const workspace = path.join(workspaceRoot(), sessionId);
   await mkdir(workspace, { recursive: true });
-  const provider = process.env.PI_PROVIDER || 'google'; const model = process.env.PI_MODEL || 'gemini-3.7-flash';
-  const user = [...(body.messages || [])].reverse().find((item) => item.role === 'user'); if (!user) throw Error('Missing user message');
-  const args = [cli, '--mode', 'json', '--session-id', sessionId, '--session-dir', sessions, ...runtimeArgs(), `Use this conversation workspace for generated files: ${workspace}\n\nUser request:\n${textOf(user.content)}`];
+  const provider = selectedModel?.provider || process.env.PI_PROVIDER || 'google'; const model = selectedModel?.id || process.env.PI_MODEL || 'gemini-3.7-flash';
+  const args = [cli, '--mode', 'json', '--session-id', sessionId, '--session-dir', sessions, ...runtimeArgs({ provider, model, thinking: selectedEffort }), piPrompt(prompt.instruction, prompt.files, workspace)];
   const child = spawn(process.execPath, args, { cwd: process.cwd(), env: { ...process.env, PI_SKIP_VERSION_CHECK: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
   const thoughts = thoughtController(onProgress); const ticker = setInterval(() => thoughts.tick(), 5000); ticker.unref();
   let stderr = ''; child.stderr.on('data', (data) => { stderr = (stderr + data.toString()).slice(-4000); });
-  let answer = ''; const research = []; const previews = []; let deliverablePrepared = false; let researchFailed = false; const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  let answer = ''; const research = []; const previews = []; let deliverablePrepared = false; let researchFailed = false; let sourceCall = 0; const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   const lines = readline.createInterface({ input: child.stdout });
   const closed = new Promise((resolve) => child.on('close', resolve));
   for await (const line of lines) {
@@ -90,7 +92,8 @@ async function run(body, sessionId, onProgress, trace) {
     if (event.type === 'tool_execution_end' && !event.isError) {
       const name = event.toolName || '';
       if (/firm_research$/.test(name)) research.push(citedResult(event));
-      if (/legal_source_retrieve_details$/.test(name)) research.push(sourceCitationText(citedResult(event)));
+      if (/legal_source_retrieve_details$/.test(name)) research.push(sourceCitationText(citedResult(event), `db-${++sourceCall}`));
+      if (/public_web_search$|deep_public_web_research$/.test(name)) research.push(publicCitationText(citedResult(event), `public-${++sourceCall}`));
       if (/prepare_document_preview$|workbench_publish_artifact$/.test(name)) { const preview = previewResult(event); if (typeof preview?.artifact_markup === 'string' && preview.artifact_markup.startsWith(':::artifact{')) previews.push(preview.artifact_markup); deliverablePrepared = true; }
     }
     if (event.type === 'message_end' && event.message?.role === 'assistant') {
@@ -114,17 +117,34 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET' && req.url?.startsWith('/files/')) { try { return await download(req, res); } catch { return json(res, 502, { error: { message: 'Document unavailable' } }); } }
   if (!authorised(req)) return json(res, 401, { error: { message: 'Unauthorized' } });
   if (req.method === 'GET' && req.url === '/v1/models') return json(res, 200, { object: 'list', data: [{ id: modelName, object: 'model' }] });
+  if (req.method === 'GET' && req.url === '/v1/pi/models') { try { return json(res, 200, { models: await availablePiModels() }); } catch { return json(res, 503, { error: { message: 'Pi model catalog unavailable' } }); } }
   if (req.method !== 'POST' || req.url !== '/v1/chat/completions') return json(res, 404, { error: { message: 'Not found' } });
   let trace; let heartbeat;
   try {
-    let raw = ''; for await (const part of req) { raw += part; if (raw.length > 2000000) throw Error('Request too large'); }
-    const body = JSON.parse(raw); const key = String(req.headers['x-librechat-conversation-id'] || body.conversation_id || randomUUID()).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 120);
-    const id = `chatcmpl-${randomUUID()}`; const user = [...(body.messages || [])].reverse().find((item) => item.role === 'user');
-    trace = createTrace({ id, key, query: textOf(user?.content), model: modelName, provider: process.env.PI_PROVIDER || 'google', thinking: process.env.PI_THINKING || 'low' });
+    const chunks = []; let bodySize = 0;
+    const maxBody = Number(process.env.JUNIOR_DE_SARAM_MAX_BODY_BYTES || 60 * 1024 * 1024);
+    for await (const part of req) { bodySize += part.length; if (bodySize > maxBody) { const error = Error('Request exceeds the configured upload limit'); error.status = 413; throw error; } chunks.push(part); }
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    const requestedModel = req.headers['x-pi-model'];
+    const selectedModel = requestedModel == null ? undefined : await resolvePiModel(requestedModel);
+    if (requestedModel != null && !selectedModel) return json(res, 400, { error: { message: 'Selected Pi model is unavailable' } });
+    const requestedEffort = req.headers['x-pi-thinking'];
+    const effortModel = selectedModel || (requestedEffort == null ? undefined : await resolvePiModel(`${process.env.PI_PROVIDER || 'google'}/${process.env.PI_MODEL || 'gemini-3.7-flash'}`));
+    if (requestedEffort != null && (!effortModel || !effortModel.thinkingLevels.includes(requestedEffort))) {
+      return json(res, 400, { error: { message: 'Selected Pi thinking effort is unavailable for this model' } });
+    }
+    const selectedEffort = requestedEffort || process.env.PI_THINKING || 'low';
+    const uploads = textUploads(body.messages || []);
+    const candidates = fileCandidates(body);
+    if (!uploads.instruction && !uploads.files.length && !candidates.length) return json(res, 400, { error: { message: 'A user message or document is required' } });
+    const key = conversationKey(req, body);
+    const files = await saveUploads(key, candidates, uploads.files);
+    const id = `chatcmpl-${randomUUID()}`;
+    trace = createTrace({ id, key, query: uploads.instruction, attachments: await conversationUploadPaths(key), model: selectedModel?.id || process.env.PI_MODEL || 'gemini-3.7-flash', provider: selectedModel?.provider || process.env.PI_PROVIDER || 'google', thinking: selectedEffort });
     const streaming = body.stream === true;
     if (streaming) { startChatStream(res, id); heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 15000); }
     const onProgress = (message) => { if (streaming) delta(res, id, 'reasoning_content', `${message}\n`); };
-    const result = await inConversation(key, () => run(body, key, onProgress, trace));
+    const result = await inConversation(key, () => run(key, { instruction: uploads.instruction, files }, onProgress, trace, selectedModel, selectedEffort));
     await trace.finish({ answer: result.answer, usage: result.usage }); clearInterval(heartbeat);
     if (streaming) finish(res, id, result.answer, body.stream_options?.include_usage ? result.usage : undefined);
     else json(res, 200, { id, object: 'chat.completion', model: modelName, choices: [{ index: 0, message: { role: 'assistant', content: result.answer }, finish_reason: 'stop' }], usage: result.usage });
@@ -132,7 +152,7 @@ const server = createServer(async (req, res) => {
     clearInterval(heartbeat); await trace?.finish({ error: error.message }); console.error('[junior-de-saram]', error.message);
     const message = 'Junior De Saram could not complete this request. Please retry or contact the administrator.';
     if (res.headersSent) { if (!res.writableEnded) { delta(res, `chatcmpl-${randomUUID()}`, 'content', message); res.end('data: [DONE]\n\n'); } }
-    else json(res, 500, { error: { message, type: 'server_error' } });
+    else json(res, error.status || 500, { error: { message: error.status === 413 ? error.message : message, type: 'server_error' } });
   }
 });
 server.listen(port, '0.0.0.0', () => console.log(`junior-de-saram listening on ${port}`));

@@ -12,6 +12,7 @@ junior-de-saram-upstream-tmp
 junior-de-saram/logs
 junior-de-saram/workspaces
 junior-de-saram/artifacts
+junior-de-saram/uploads
 packages/ai/src/providers/data
 packages/ai/src/providers/.model-generation-*
 **/__pycache__

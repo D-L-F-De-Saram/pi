@@ -6,12 +6,15 @@ services:
     env_file: .env
     environment:
       JUNIOR_DE_SARAM_LOG_ROOT: /data/logs
+      JUNIOR_DE_SARAM_UPLOAD_ROOT: /data/uploads
+      JUNIOR_DE_SARAM_ATTACHMENT_ORIGINS: ${JUNIOR_DE_SARAM_ATTACHMENT_ORIGINS:-http://api:3080,http://librechat:3080}
     ports:
       - "127.0.0.1:8160:8160"
     volumes:
       - junior_de_saram_sessions:/data/sessions
       - junior_de_saram_workspaces:/data/workspaces
       - junior_de_saram_artifacts:/data/artifacts
+      - junior_de_saram_uploads:/data/uploads
       - ./junior-de-saram/logs:/data/logs
     networks:
       - librechat
@@ -20,6 +23,7 @@ volumes:
   junior_de_saram_sessions:
   junior_de_saram_workspaces:
   junior_de_saram_artifacts:
+  junior_de_saram_uploads:
 networks:
   librechat:
     external: true

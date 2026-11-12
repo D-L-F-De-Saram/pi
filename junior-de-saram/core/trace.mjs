@@ -25,11 +25,11 @@ function clean(value, key = '') {
   return value;
 }
 
-export function createTrace({ id = `chatcmpl-${randomUUID()}`, key, query, model, provider, thinking }) {
+export function createTrace({ id = `chatcmpl-${randomUUID()}`, key, query, attachments = [], model, provider, thinking }) {
   const start = Date.now();
   const stamp = new Date(start).toISOString();
   const dir = path.join(root(), 'traces', stamp.slice(0, 10), id);
-  const trace = { schema_version: 1, trace: { request_id: id, session_id: `junior-de-saram-${key}`, conversation_key: `junior-de-saram-${key}`, source: 'junior-de-saram', started_at: stamp, outcome: 'running' }, request: { model, provider, thinking, original_query: clean(query), attachments: [] }, timeline: [], llm_calls: [], tool_calls: [], final: undefined };
+  const trace = { schema_version: 1, trace: { request_id: id, session_id: `junior-de-saram-${key}`, conversation_key: `junior-de-saram-${key}`, source: 'junior-de-saram', started_at: stamp, outcome: 'running' }, request: { model, provider, thinking, original_query: clean(query), attachments: attachments.map((file) => ({ stored_path: file })) }, timeline: [], llm_calls: [], tool_calls: [], final: undefined };
   const pending = new Map();
   let queue = Promise.resolve();
   const save = (record) => { queue = queue.then(async () => { await mkdir(dir, { recursive: true }); if (record) await appendFile(path.join(dir, 'events.jsonl'), `${JSON.stringify(clean(record))}\n`); await writeFile(path.join(dir, 'trace.json'), `${JSON.stringify(clean(trace), null, 2)}\n`); }).catch((error) => console.error('[junior-de-saram][trace]', error.message)); return queue; };

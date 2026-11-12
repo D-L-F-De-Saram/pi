@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ToolResultEvent } from '@earendil-works/pi-coding-agent';
 import { restoreCitations } from '../../junior-de-saram/core/citations.mjs';
-import { sourceCitationText } from '../../junior-de-saram/core/source-citations.mjs';
+import { publicCitationText, sourceCitationText } from '../../junior-de-saram/core/source-citations.mjs';
 
 type Artifact = { download_url?: unknown };
 
@@ -45,12 +45,14 @@ export default function deSaramDelivery(pi: ExtensionAPI) {
   let pending: string[] = [];
   let downloads: Array<{ label: string; url: string }> = [];
   let deliverablePrepared = false;
-  pi.on('agent_start', () => { research = []; pending = []; downloads = []; deliverablePrepared = false; });
+  let sourceCall = 0;
+  pi.on('agent_start', () => { research = []; pending = []; downloads = []; deliverablePrepared = false; sourceCall = 0; });
   pi.on('tool_result', (event) => {
     if (event.isError) return;
     const text = event.content.filter((part) => part.type === 'text').map((part) => part.text || '').join('\n');
     if (event.toolName.endsWith('firm_research')) research.push(text);
-    if (event.toolName.endsWith('legal_source_retrieve_details')) research.push(sourceCitationText(text));
+    if (event.toolName.endsWith('legal_source_retrieve_details')) research.push(sourceCitationText(text, `db-${++sourceCall}`));
+    if (event.toolName.endsWith('public_web_search') || event.toolName.endsWith('deep_public_web_research')) research.push(publicCitationText(text, `public-${++sourceCall}`));
     if (!isPreviewTool(event.toolName)) return;
     deliverablePrepared = true;
     for (const markup of previewResults(event)) if (!pending.includes(markup)) pending.push(markup);

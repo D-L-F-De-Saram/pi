@@ -19,7 +19,7 @@ COPY .pi ./.pi
 COPY .agents ./.agents
 COPY junior-de-saram ./junior-de-saram
 ENV PI_SKIP_VERSION_CHECK=1 JUNIOR_DE_SARAM_PORT=8160 JUNIOR_DE_SARAM_SESSION_DIR=/data/sessions JUNIOR_DE_SARAM_WORKSPACE_ROOT=/data/workspaces JUNIOR_DE_SARAM_ARTIFACT_ROOT=/data/artifacts
-RUN mkdir -p /data/sessions /data/logs /data/workspaces /data/artifacts && chown -R node:node /data
+RUN mkdir -p /data/sessions /data/logs /data/workspaces /data/artifacts /data/uploads && chown -R node:node /data
 USER node
 EXPOSE 8160
 HEALTHCHECK CMD node -e "fetch('http://127.0.0.1:8160/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"

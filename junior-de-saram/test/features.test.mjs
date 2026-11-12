@@ -7,8 +7,8 @@ import { docxXml, previewMarkup } from '../core/preview.mjs';
 test('research footnotes retain their original linked definitions and page references', () => {
   const researcher = 'A finding[^2].\n\n[^2]: [Companies Act](https://example.test/companies-act) p. 17';
   const final = restoreCitations('The Act says so [[^2]].', [researcher]);
-  assert.match(final, /The Act says so \[\^2\]\./);
-  assert.match(final, /\[\^2\]: \[Companies Act\]\(https:\/\/example\.test\/companies-act\) p\. 17/);
+  assert.match(final, /The Act says so \[\[1\]\]\(https:\/\/example\.test\/companies-act\)\./);
+  assert.match(final, /^1\. \[Companies Act\]\(https:\/\/example\.test\/companies-act\) p\. 17/m);
   assert.equal(sourceDefinitions(researcher).length, 1);
 });
 
@@ -21,7 +21,8 @@ test('conflicting footnote numbers are not attributed to the wrong source', () =
 test('only a uniquely identified named source is linked in a combined answer', () => {
   const source = 'Claim[^1].\n\n[^1]: [Companies Act](https://example.test/companies-act)';
   const final = restoreCitations('The Companies Act is relevant.', [source]);
-  assert.match(final, /\[Companies Act\]\(https:\/\/example\.test\/companies-act\)/);
+  assert.match(final, /Companies Act\[\[1\]\]\(https:\/\/example\.test\/companies-act\)/);
+  assert.match(final, /^1\. \[Companies Act\]\(https:\/\/example\.test\/companies-act\)/m);
 });
 
 function zipDocument(xml) {

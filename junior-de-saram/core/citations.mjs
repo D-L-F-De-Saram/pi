@@ -33,9 +33,29 @@ function sourceAnswerWithFootnotes(researchAnswers) {
 // numbered reference list below the answer.
 export function linkNumberedCitations(answer) {
   const sources = sourceDefinitions(answer);
-  const byId = new Map(sources.map((source) => [source.id, source.links[0]?.url]));
-  return String(answer).replace(definition, '').replace(/\[\^([^\]]+)\]/g, (match, id) => byId.has(id) ? `[[${id}]](${byId.get(id)})` : match)
-    .trimEnd() + (sources.length ? `\n\n### References\n\n${sources.map((source) => `${source.id}. ${source.text}`).join('\n')}` : '');
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  const numbered = new Map();
+  const references = [];
+  const body = String(answer).replace(definition, '').replace(/\[\^([^\]]+)\]/g, (match, id) => {
+    const source = byId.get(id);
+    if (!source?.links[0]) return match;
+    if (!numbered.has(id)) {
+      numbered.set(id, numbered.size + 1);
+      references.push(`${numbered.get(id)}. ${source.text}`);
+    }
+    return `[[${numbered.get(id)}]](${source.links[0].url})`;
+  }).trimEnd();
+  return body + (references.length ? `\n\n### References\n\n${references.join('\n')}` : '');
+}
+
+function gazetteNumber(source) {
+  const link = source.links[0];
+  if (!link) return undefined;
+  let filename;
+  try { filename = decodeURIComponent(new URL(link.url).pathname.split('/').at(-1)); } catch { return undefined; }
+  if (!/\.pdf$/i.test(filename)) return undefined;
+  const match = filename.match(/(?:gazette(?:\s+extraordinary)?(?:\s+no\.?)?|no\.?)\s*([12]\d{3})\s*[/_ -]?\s*(\d{1,3})(?!\d)/i);
+  return match ? `${match[1]}/${match[2]}` : undefined;
 }
 
 export function restoreCitations(answer, researchAnswers, { fallbackToResearch = false } = {}) {
@@ -43,6 +63,10 @@ export function restoreCitations(answer, researchAnswers, { fallbackToResearch =
   const preview = previewAt >= 0 ? String(answer).slice(previewAt) : '';
   const original = (previewAt >= 0 ? String(answer).slice(0, previewAt) : String(answer)).replace(/\[\[\^([^\]]+)\]\]/g, '[^$1]');
   const body = original.replace(definition, '').trimEnd();
+  if ((/^### References\s*$/m.test(body) && /\[\[\d+\]\]\(https?:\/\/[^)]+\)/.test(body)) ||
+      (/^### Sources consulted\s*$/m.test(body) && /^1\. \[[^\]]+\]\(https?:\/\/[^)]+\)/m.test(body))) {
+    return preview ? `${body}\n\n${preview}` : body;
+  }
   if (fallbackToResearch && !/\[\^[^\]]+\]/.test(body)) {
     const sourceAnswer = sourceAnswerWithFootnotes(researchAnswers);
     if (sourceAnswer) return preview ? `${linkNumberedCitations(sourceAnswer)}\n\n${preview}` : linkNumberedCitations(sourceAnswer);
@@ -58,23 +82,66 @@ export function restoreCitations(answer, researchAnswers, { fallbackToResearch =
     const urls = new Set(candidates.map((source) => source.links.map((link) => link.url).join('|')));
     if (urls.size === 1 && candidates.length) additions.push(`[^${id}]: ${candidates[0].text}`);
   }
-  // Named sources can be linked even when the model omitted footnote markers.
+  // Convert source links in the answer into numbered references, while keeping
+  // artifact downloads as downloads rather than legal citations.
   let linked = body;
+  const synthetic = [];
+  let nextSynthetic = 0;
+  linked = linked.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, name, url) => {
+    if (/\/artifacts\/|\/files\//i.test(url) || /^\[?\d+\]?$/.test(name)) return match;
+    const id = `answer-source-${++nextSynthetic}`;
+    synthetic.push(`[^${id}]: [${name}](${url})`);
+    return `${name}[^${id}]`;
+  });
+  // A uniquely named source can be cited where the final answer mentions it
+  // even if the model omitted the source URL.
   const namedLinks = new Map();
   for (const source of sources) for (const link of source.links) {
     const urls = namedLinks.get(link.name) || new Set();
     urls.add(link.url); namedLinks.set(link.name, urls);
   }
+  const citedUrls = new Set();
+  const genericNames = new Set(['price controls', 'legislation', 'guidelines', 'announcements', 'home', 'nmra', 'post']);
   for (const source of sources) {
     for (const { name, url } of source.links) {
-      if (name.length < 8 || namedLinks.get(name)?.size !== 1 || linked.includes(url)) continue;
+      if (name.length < 8 || genericNames.has(name.trim().toLowerCase()) || namedLinks.get(name)?.size !== 1 || citedUrls.has(url) || linked.includes(url)) continue;
+      if (/\bgazette\b/i.test(name) && /\b[12]\d{3}\/\d+\b/.test(name) && !gazetteNumber(source)) continue;
       const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      linked = linked.replace(new RegExp(`(?<!\\[)\\b${escaped}\\b(?!\\])`, 'i'), (match) => `[${match}](${url})`);
+      const pattern = new RegExp(`(?<!\\[)\\b${escaped}\\b(?!\\])`, 'i');
+      if (!pattern.test(linked)) continue;
+      const id = `named-source-${++nextSynthetic}`;
+      synthetic.push(`[^${id}]: ${source.text}`);
+      linked = linked.replace(pattern, (match) => `${match}[^${id}]`);
+      citedUrls.add(url);
     }
   }
+  const gazettes = new Map();
+  for (const source of sources) {
+    const number = gazetteNumber(source);
+    if (!number) continue;
+    const url = source.links[0].url;
+    const score = (/\.pdf(?:\?|$)/i.test(url) ? 2 : 0) + (/\.gov\.lk(?:\/|$)/i.test(new URL(url).hostname) ? 4 : 0);
+    if (!gazettes.has(number) || score > gazettes.get(number).score) gazettes.set(number, { source, score });
+  }
+  for (const [number, { source }] of gazettes) {
+    if (synthetic.some((item) => item.includes(`](${source.links[0].url})`))) continue;
+    const pattern = new RegExp(`\\b${number.replace('/', '\\/')}\\b(?!\\[\\^)`);
+    if (!pattern.test(linked)) continue;
+    const id = `gazette-source-${++nextSynthetic}`;
+    synthetic.push(`[^${id}]: [Gazette No. ${number}](${source.links[0].url})`);
+    linked = linked.replace(pattern, (match) => `${match}[^${id}]`);
+  }
   const preserved = [...original.matchAll(definition)].map((match) => `[^${match[1]}]: ${match[2].trim()}`);
-  const all = [...preserved, ...additions];
+  const all = [...preserved, ...additions, ...synthetic];
   const delivered = all.length ? `${linked}\n\n${all.join('\n')}` : linked;
   const linkedAnswer = linkNumberedCitations(delivered);
+  if (!linkedAnswer.includes('### References') && !/\[\[\d+\]\]\(https?:\/\//.test(linkedAnswer) && sources.length) {
+    const selected = [...new Map(sources.flatMap((source) => source.links.map((link) => [link.url, link.name]))).entries()]
+      .filter(([, name]) => name.length >= 12).slice(0, 5);
+    if (selected.length) {
+      const consulted = selected.map(([url, name], index) => `${index + 1}. [${name}](${url})`).join('\n');
+      return `${linkedAnswer.trimEnd()}\n\n### Sources consulted\n\n${consulted}${preview ? `\n\n${preview}` : ''}`;
+    }
+  }
   return preview ? `${linkedAnswer.trimEnd()}\n\n${preview}` : linkedAnswer;
 }
