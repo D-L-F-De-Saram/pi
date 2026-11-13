@@ -50,6 +50,8 @@ collect.sh
 packages/agent/docs/extensions/pi-server-artifact/index.md
 
 junior-de-saram/logs/
+junior-de-saram/private-wiki/
+junior-de-saram/private-wiki-cache/
 junior-de-saram/workspaces/
 junior-de-saram/artifacts/
 junior-de-saram/sessions/

@@ -8,6 +8,9 @@ Run `node --test junior-de-saram/test/*.test.mjs` and `npm run check`. The full 
 
 ## New capabilities through normal Pi requests
 
+- Ask for a lease or writ draft. Check that Pi uses a private wiki example when helpful, writes its own Markdown, validates it, renders a DOCX, publishes a download and offers a preview. It must not call the former `document_drafter` tool or copy unrelated client particulars.
+- Ask for a legal document type absent from the seed wiki. Check indexed firm candidate discovery, a title-named Markdown and `.md.json` under the host wiki's `imported/` folder, and a repeat request that reads the imported copy without fetching it again. The source Markdown and imported files must remain outside Git.
+- Continue a draft after answering a clarification or uploading a supporting document. Check that Pi incorporates the new facts and that the same conversation trace records precedent lookup, draft validation, rendering and publication.
 - Ask for Acts or regulations filtered by a year and authority. Check discovered field capabilities, label resolution, every requested filter, logical document identities and pagination.
 - Ask for more detail from one cited document. Check record retrieval, actual full-text passages, source links and continuation offsets.
 - Request a two-slide legal presentation, a formatted DOCX, a PDF brief and a spreadsheet with formulas. Check that Pi reads the skills, runs code, validates output and publishes downloads.

@@ -42,7 +42,9 @@ function labelForTool(name) {
   if (/^(bash|write|edit)$/.test(name)) return 'Creating the requested legal work product and checking its output…';
   if (/^(read|grep|find|ls)$/.test(name)) return 'Reading the relevant material and document instructions…';
   if (/firm_research$/.test(name)) return 'Searching the firm’s knowledge base and checking legal sources…';
-  if (/document_drafter$/.test(name)) return 'Preparing the requested legal document with the firm drafter…';
+  if (/de_saram_precedent_search$/.test(name)) return 'Checking firm drafting examples for a suitable structure…';
+  if (/de_saram_precedent_read$/.test(name)) return 'Reading the selected drafting example…';
+  if (/de_saram_validate_draft$/.test(name)) return 'Checking the completed draft for gaps and placeholders…';
   if (/public_web_search$/.test(name)) return 'Checking current public sources for relevant developments…';
   if (/deep_public_web_research$/.test(name)) return 'Comparing public sources and reading the relevant passages…';
   if (/prepare_document_preview$/.test(name)) return 'Preparing a preview of the completed document…';
@@ -70,7 +72,7 @@ function thoughtController(send) {
       if (event.type === 'tool_execution_end' && event.isError) publish('A source or document step needs another approach. I’m checking the available options…');
       if (event.type === 'tool_execution_end' && !event.isError && /firm_research$/.test(event.toolName || '')) publish('The firm’s researcher has returned source material; I’m checking its cited authorities…');
     },
-    tick() { const elapsed = Date.now() - since; const milestone = [20000, 60000, 120000].find((n) => elapsed >= n && !milestones.has(n)); if (!milestone) return; milestones.add(milestone); const subject = /document_drafter|preview/.test(phase) ? 'document' : /research|web_search/.test(phase) ? 'source check' : 'legal work'; publish(milestone === 20000 ? `The ${subject} is still being prepared…` : milestone === 60000 ? `The ${subject} is taking longer than usual; I’m continuing the checks…` : `Still working on the ${subject}; I’ll continue when this step finishes…`); },
+    tick() { const elapsed = Date.now() - since; const milestone = [20000, 60000, 120000].find((n) => elapsed >= n && !milestones.has(n)); if (!milestone) return; milestones.add(milestone); const subject = /precedent|validate_draft|preview/.test(phase) ? 'document' : /research|web_search/.test(phase) ? 'source check' : 'legal work'; publish(milestone === 20000 ? `The ${subject} is still being prepared…` : milestone === 60000 ? `The ${subject} is taking longer than usual; I’m continuing the checks…` : `Still working on the ${subject}; I’ll continue when this step finishes…`); },
   };
 }
 async function run(sessionId, prompt, onProgress, trace, selectedModel, selectedEffort) {

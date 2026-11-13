@@ -1,10 +1,10 @@
 # Junior De Saram local operation
 
-Junior De Saram is a separate Pi 1.5 checkout. Its MCP tools are `firm_research`, `document_drafter`, `public_web_search`, `legal_source_retrieve_details`, `code_runner_data_transform`, `workbench_publish_artifact` and `prepare_document_preview`. Pi also has built-in read/write/edit/bash tools for document-skill scripts. The final-answer and source-retrieval skills are in `.agents/skills/de-saram-legal-final-answer/` and `.agents/skills/de-saram-source-retrieval/`; PDF, PPTX, XLSX and DOCX skills include their scripts and reference material. No fixed research or drafting sequence is imposed.
+Junior De Saram is a separate Pi checkout. Its MCP tools are `firm_research`, `legal_source_retrieve_details`, `de_saram_precedent_search`, `de_saram_precedent_read`, `de_saram_validate_draft`, `public_web_search`, `deep_public_web_research`, `code_runner_data_transform`, `workbench_publish_artifact` and `prepare_document_preview`. Pi also has built-in read/write/edit/bash tools for document-skill scripts. The final-answer, source-retrieval and legal-drafting skills are in `.agents/skills/`; PDF, PPTX, XLSX and DOCX skills include their scripts and reference material. No fixed research or drafting sequence is imposed. Pi writes substantive drafts itself; the separate firm drafter is not an MCP tool.
 
 The context extension is `.pi/extensions/junior-de-saram-context.ts`. The delivery extension restores linked researcher/direct-source citations and delivers preview artifacts. The scope guard blocks known credential access patterns, and the local-trace extension logs CLI activity. These guards are not a complete sandbox for arbitrary code. Both CLI and hosted requests use `junior-de-saram/core/runtime.mjs` for consistent model, extension and skill options.
 
-The OpenAI-compatible service is `junior-de-saram/server/openai.mjs`, listening on container port 8160 and Windows loopback port 8160. Local LibreChat shows **Junior De Saram Pi** in the **De Saram AI** group. The firm researcher and drafter remain separate available models in that group.
+The OpenAI-compatible service is `junior-de-saram/server/openai.mjs`, listening on container port 8160 and Windows loopback port 8160. Local LibreChat shows **Junior De Saram Pi** in the **De Saram AI** group. The firm researcher and drafter may remain separate LibreChat models; Junior De Saram Pi uses its own drafting tools.
 
 ## Start
 
@@ -29,6 +29,8 @@ The Windows launcher reconnects those local forwards automatically using WSL roo
 
 The Docker image includes Python/Node document libraries, LibreOffice Writer/Calc/Impress, Pandoc, Poppler, OCR and Chromium. Pi can read a skill, write code and run its scripts. The data-transform MCP tool is a bounded JSON calculator and cannot make files; document creation uses the built-in tools.
 
+Private drafting examples live in the Git-ignored `junior-de-saram/private-wiki/` directory, mounted read/write from the host at `/data/private-wiki`. Newly selected firm examples are saved in its `imported/` subfolder using readable titles. `JUNIOR_DE_SARAM_WIKI_HOST_PATH` in `.env` selects the host directory for local or server deployment. The legal-drafting skill includes a Markdown-to-DOCX renderer, the firm's reference styles and logo. See [PRIVATE_WIKI.md](junior-de-saram/PRIVATE_WIKI.md).
+
 Hosted generated files live in `/data/workspaces/<conversation-id>/`. CLI files live under `/data/workspaces/`. Completed artifacts are copied to `/data/artifacts/` and delivered through signed links using `JUNIOR_DE_SARAM_ARTIFACT_SECRET` or the existing service API key. Both directories are persistent volumes. Image/PDF previews show up to six pages; spreadsheet previews show bounded sheet tables. Output validation remains Pi's responsibility before publication.
 
 After source, dependency or skill changes:
@@ -49,11 +51,11 @@ curl -s http://127.0.0.1:8160/health
 docker logs --tail 50 junior-de-saram
 ```
 
-The host accepts `POST /v1/chat/completions` and `GET /v1/models` with `Authorization: Bearer <JUNIOR_DE_SARAM_API_KEY>`. LibreChat sends the conversation ID header so Pi retains its own session across turns. The document drafter can ask a template or branding question. Answer it in the same chat; Pi then passes the user's answer and previous drafter messages to the service.
+The host accepts `POST /v1/chat/completions` and `GET /v1/models` with `Authorization: Bearer <JUNIOR_DE_SARAM_API_KEY>`. LibreChat sends the conversation ID header so Pi retains its own session across turns. Pi can ask for missing facts or a template choice and then continue its own draft in the same session. Uploaded supporting files can supply the answer.
 
-For local DOCX downloads, the host signs and proxies `/files/...docx` over the SSH tunnel. The public De Saram development hostname configured by the existing drafter did not resolve locally during testing; the signed local link was tested from Windows and returned a valid DOCX.
+New local DOCX deliverables are published from the conversation workspace through signed `/artifacts/...` links. Historical `/files/...docx` links from the former drafter integration remain supported.
 
-## Validation performed
+## Historical validation before native drafting
 
 - Docker image built; container healthy.
 - Pi CLI invocation returned a greeting.
@@ -66,12 +68,23 @@ For local DOCX downloads, the host signs and proxies `/files/...docx` over the S
 
 ## Live progress, citations, previews and logs
 
-The host streams short safe progress updates in LibreChat while Pi researches, searches public sources or asks the firm drafter for a document. It does not expose tool arguments, credentials or raw service status. Research citations are reconciled with the researcher output: only linked footnote definitions with an unambiguous source are restored. A completed drafter DOCX can be previewed in LibreChat canvas when Pi selects the preview tool; the original DOCX download remains available. See [LOGGING.md](LOGGING.md) for persistent per-request JSON traces and the local viewer import command.
+The host streams short safe progress updates in LibreChat while Pi researches, searches public sources or prepares a document. It does not expose tool arguments, credentials or raw service status. Research citations are reconciled with the researcher output: only linked footnote definitions with an unambiguous source are restored. A completed local DOCX can be previewed in LibreChat canvas when Pi selects the preview tool; the original DOCX download remains available. See [LOGGING.md](LOGGING.md) for persistent per-request JSON traces and the local viewer import command.
 
-## Verification of this update
+## Historical citation and preview verification
 
 - The repository quality gate passed inside the built Docker image.
 - Focused citation and DOCX preview tests passed.
 - A live Companies Act question streamed four progress messages, returned two linked footnote definitions and token usage.
 - The preview MCP tool rendered an existing drafter DOCX into HTML; a Pi request selected it and returned a canvas artifact together with the signed DOCX download link.
 - The latest trace included the model calls, preview tool call, final answer and numeric token totals. The container was healthy after recreation.
+
+## Native drafting verification before rebuild
+
+- Four full firm Markdown examples were copied into the ignored private wiki with source IDs and paths. They are absent from the Docker build context and Git.
+- A local MCP search returned the lease example; an MCP read returned a bounded excerpt. The exposed MCP tool list contains the three native drafting tools and no `document_drafter` tool.
+- A missing employment-contract query found indexed firm candidates. Reading a selected candidate imported it once into the ignored cache; a repeat search found the cached copy.
+- Focused precedent and trace tests passed. The trace test records `de_saram_precedent_read` as a tool call with its result.
+- The firm DOCX renderer produced a DOCX in the existing image. LibreOffice rendered it to one page with the table and branded footer visible.
+- `npm run check` and `docker compose config --quiet` passed. The running service has not yet been rebuilt or restarted with this change.
+
+The later host-visible wiki migration copied the two existing Docker-cached examples into the ignored host wiki with readable filenames while retaining their legacy backup. Its new Compose mount and runtime behavior await a user rebuild and restart.

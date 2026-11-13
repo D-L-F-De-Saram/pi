@@ -13,6 +13,8 @@ junior-de-saram/logs
 junior-de-saram/workspaces
 junior-de-saram/artifacts
 junior-de-saram/uploads
+junior-de-saram/private-wiki
+junior-de-saram/private-wiki-cache
 packages/ai/src/providers/data
 packages/ai/src/providers/.model-generation-*
 **/__pycache__
