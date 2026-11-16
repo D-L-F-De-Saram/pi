@@ -39,6 +39,14 @@ if ! nsenter -t "$container_pid" -n ss -ltn | grep -q '127.0.0.1:17008 '; then
   set -- "$@" -L "127.0.0.1:17008:$file_ip:7008"
   needed=1
 fi
+if ! nsenter -t "$container_pid" -n ss -ltn | grep -q '127.0.0.1:18130 '; then
+  upload_container=$(runuser -u "$ssh_user" -- ssh -o BatchMode=yes "$ssh_alias" "docker ps --filter 'name=docs-desaram-ai-upload-process' --format '{{.ID}}' | head -n 1")
+  test -n "$upload_container"
+  upload_ip=$(runuser -u "$ssh_user" -- ssh -o BatchMode=yes "$ssh_alias" "docker inspect $upload_container --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}'" | awk '{print $1}')
+  test -n "$upload_ip"
+  set -- "$@" -L "127.0.0.1:18130:$upload_ip:8130"
+  needed=1
+fi
 if [ "$needed" -eq 0 ]; then start_watchdog; printf '%s\n' 'De Saram service forwards are already connected.'; exit 0; fi
 nsenter -t "$container_pid" -n runuser -u "$ssh_user" -- ssh "$@" "$ssh_alias"
 start_watchdog

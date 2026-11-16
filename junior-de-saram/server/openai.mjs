@@ -12,6 +12,7 @@ import { availablePiModels, resolvePiModel } from '../core/pi-models.mjs';
 import { artifactDownload, workspaceRoot } from '../core/artifacts.mjs';
 import { publicCitationText, sourceCitationText } from '../core/source-citations.mjs';
 import { conversationKey, conversationUploadPaths, fileCandidates, piPrompt, saveUploads, textUploads } from '../core/uploads.mjs';
+import { syncCatalog } from '../core/drafting-catalog.mjs';
 
 const port = Number(process.env.JUNIOR_DE_SARAM_PORT || 8160);
 const modelName = process.env.JUNIOR_DE_SARAM_MODEL_NAME || 'junior-de-saram-pi';
@@ -42,8 +43,9 @@ function labelForTool(name) {
   if (/^(bash|write|edit)$/.test(name)) return 'Creating the requested legal work product and checking its output…';
   if (/^(read|grep|find|ls)$/.test(name)) return 'Reading the relevant material and document instructions…';
   if (/firm_research$/.test(name)) return 'Searching the firm’s knowledge base and checking legal sources…';
-  if (/de_saram_precedent_search$/.test(name)) return 'Checking firm drafting examples for a suitable structure…';
-  if (/de_saram_precedent_read$/.test(name)) return 'Reading the selected drafting example…';
+  if (/de_saram_precedent_search$/.test(name)) return 'Searching the firm’s drafting catalog for a suitable source…';
+  if (/de_saram_precedent_read$/.test(name)) return 'Reading the selected drafting source…';
+  if (/de_saram_template_copy$/.test(name)) return 'Copying a verified template before filling this draft…';
   if (/de_saram_validate_draft$/.test(name)) return 'Checking the completed draft for gaps and placeholders…';
   if (/public_web_search$/.test(name)) return 'Checking current public sources for relevant developments…';
   if (/deep_public_web_research$/.test(name)) return 'Comparing public sources and reading the relevant passages…';
@@ -81,7 +83,7 @@ async function run(sessionId, prompt, onProgress, trace, selectedModel, selected
   await mkdir(workspace, { recursive: true });
   const provider = selectedModel?.provider || process.env.PI_PROVIDER || 'google'; const model = selectedModel?.id || process.env.PI_MODEL || 'gemini-3.7-flash';
   const args = [cli, '--mode', 'json', '--session-id', sessionId, '--session-dir', sessions, ...runtimeArgs({ provider, model, thinking: selectedEffort }), piPrompt(prompt.instruction, prompt.files, workspace)];
-  const child = spawn(process.execPath, args, { cwd: process.cwd(), env: { ...process.env, PI_SKIP_VERSION_CHECK: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, args, { cwd: process.cwd(), env: { ...process.env, PI_SKIP_VERSION_CHECK: '1', JUNIOR_DE_SARAM_ACTIVE_WORKSPACE: workspace }, stdio: ['ignore', 'pipe', 'pipe'] });
   const thoughts = thoughtController(onProgress); const ticker = setInterval(() => thoughts.tick(), 5000); ticker.unref();
   let stderr = ''; child.stderr.on('data', (data) => { stderr = (stderr + data.toString()).slice(-4000); });
   let answer = ''; const research = []; const previews = []; let deliverablePrepared = false; let researchFailed = false; let sourceCall = 0; const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
@@ -157,4 +159,9 @@ const server = createServer(async (req, res) => {
     else json(res, error.status || 500, { error: { message: error.status === 413 ? error.message : message, type: 'server_error' } });
   }
 });
-server.listen(port, '0.0.0.0', () => console.log(`junior-de-saram listening on ${port}`));
+server.listen(port, '0.0.0.0', () => {
+  console.log(`junior-de-saram listening on ${port}`);
+  const refresh = () => syncCatalog().then((result) => console.log('[de-saram-catalog]', JSON.stringify(result))).catch((error) => console.error('[de-saram-catalog]', error.message));
+  setTimeout(refresh, 10000).unref();
+  setInterval(refresh, 10 * 60 * 1000).unref();
+});

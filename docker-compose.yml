@@ -8,7 +8,7 @@ services:
       JUNIOR_DE_SARAM_LOG_ROOT: /data/logs
       JUNIOR_DE_SARAM_UPLOAD_ROOT: /data/uploads
       JUNIOR_DE_SARAM_KB_ROOT: /data/private-wiki
-      JUNIOR_DE_SARAM_KB_CACHE_ROOT: /data/private-wiki/imported
+      JUNIOR_DE_SARAM_CATALOG_ROOT: /data/private-wiki
       JUNIOR_DE_SARAM_ATTACHMENT_ORIGINS: ${JUNIOR_DE_SARAM_ATTACHMENT_ORIGINS:-http://api:3080,http://librechat:3080}
     ports:
       - "127.0.0.1:8160:8160"

@@ -4,13 +4,14 @@ Test a changed capability first. Once it passes, check the existing features.
 
 ## Automated checks
 
-Run `node --test junior-de-saram/test/*.test.mjs` and `npm run check`. The full Pi check may depend on hydration of its ignored provider catalog (`npm run hydrate:model-data`). Do not commit generated provider data or credentials.
+Run `node --test junior-de-saram/test/*.test.mjs`, `python3 junior-de-saram/test/test_template_fill.py` and `npm run check`. In the separate source-service checkout, run `python -m unittest test_drafting_source_gateway` from its `upload-process/` directory after installing its Python dependencies. The full Pi check may depend on hydration of its ignored provider catalog (`npm run hydrate:model-data`). Do not commit generated provider data or credentials.
 
 ## New capabilities through normal Pi requests
 
-- Ask for a lease or writ draft. Check that Pi uses a private wiki example when helpful, writes its own Markdown, validates it, renders a DOCX, publishes a download and offers a preview. It must not call the former `document_drafter` tool or copy unrelated client particulars.
-- Ask for a legal document type absent from the seed wiki. Check indexed firm candidate discovery, a title-named Markdown and `.md.json` under the host wiki's `imported/` folder, and a repeat request that reads the imported copy without fetching it again. The source Markdown and imported files must remain outside Git.
-- Continue a draft after answering a clarification or uploading a supporting document. Check that Pi incorporates the new facts and that the same conversation trace records precedent lookup, draft validation, rendering and publication.
+- Ask for a document with a verified firm DOCX template. Check that Pi searches the private catalog, copies the original into this conversation's workspace, fills only established facts on the copy, validates and publishes the filled DOCX, and provides a preview. The repository original must remain unchanged.
+- Ask for a document represented by a completed firm sample. Check that Pi reads relevant passages, authors a new draft, validates it, renders a DOCX, publishes it and offers a preview. It must not copy unrelated client particulars.
+- Inspect the ignored `private-wiki/catalog.json`. It should list classifications and verified original availability without storing sample bodies. New indexed sources enter after incremental refresh; removed sources disappear on scheduled full reconciliation. Existing inactive Markdown examples must not be overwritten or deleted.
+- Continue a draft after answering a clarification or uploading a supporting document. Check that Pi incorporates the new facts and that the same conversation trace records catalog search, sample read or template copy, validation, rendering and publication.
 - Ask for Acts or regulations filtered by a year and authority. Check discovered field capabilities, label resolution, every requested filter, logical document identities and pagination.
 - Ask for more detail from one cited document. Check record retrieval, actual full-text passages, source links and continuation offsets.
 - Request a two-slide legal presentation, a formatted DOCX, a PDF brief and a spreadsheet with formulas. Check that Pi reads the skills, runs code, validates output and publishes downloads.

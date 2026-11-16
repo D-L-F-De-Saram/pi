@@ -1,0 +1,11 @@
+# Use on the De Saram dev server, where the upload-process source gateway is
+# attached to docs-desaram-ai-network. Local development uses the SSH forward.
+services:
+  junior-de-saram:
+    networks:
+      - librechat
+      - documents
+networks:
+  documents:
+    external: true
+    name: docs-desaram-ai-network
