@@ -1,4 +1,6 @@
 import readline from 'node:readline';
+import { pathToFileURL } from 'node:url';
+import { currentChat } from '../core/chat-scope.mjs';
 import { retrieveSource } from '../core/source-retrieval.mjs';
 import { sourceTool, artifactTool, codeTool } from '../core/tool-definitions.mjs';
 import { publishArtifact, localPreview } from '../core/artifacts.mjs';
@@ -18,8 +20,9 @@ const definitions = [
   { name: 'prepare_document_preview', description: 'Prepare a safe LibreChat canvas preview of a completed local PDF, PPTX, XLSX, DOCX or text deliverable. Prefer a preview for a final document unless already included by workbench_publish_artifact or the user requested download only. A preview supplements the original download; do not use intermediate files.', inputSchema: { type: 'object', additionalProperties: false, required: ['file_path'], properties: { file_path: { type: 'string', description: 'Completed local workspace file.' } } } },
 ];
 const output = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
+const direct = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 function env(name) { const value = process.env[name]; if (!value) throw Error(`Missing ${name} configuration`); return value; }
-function progress(token, message) { if (token !== undefined) output({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken: token, progress: 0, message } }); }
+function progress(token, message) { if (direct && token !== undefined) output({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken: token, progress: 0, message } }); }
 function progressText(name, text) {
   const safe = String(text).toLowerCase();
   if (name === 'firm_research') return /search|retriev|source|document/.test(safe) ? 'Searching the firm’s legal sources and checking relevant documents…' : /cit|answer|synth|summari/.test(safe) ? 'Checking source links and preparing the legal answer…' : undefined;
@@ -88,12 +91,31 @@ async function call(name, args, token) {
   }
   throw Error('Unknown tool');
 }
-readline.createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => { void (async () => {
-  let req; try {
-    req = JSON.parse(line); if (!Object.hasOwn(req, 'id')) return;
-    if (req.method === 'initialize') return output({ jsonrpc: '2.0', id: req.id, result: { protocolVersion: req.params?.protocolVersion || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'de-saram-legal', version: '0.2.0' } } });
-    if (req.method === 'tools/list') return output({ jsonrpc: '2.0', id: req.id, result: { tools: definitions } });
-    if (req.method === 'tools/call') { try { const value = await call(req.params.name, req.params.arguments || {}, req.params?._meta?.progressToken); const structuredContent = value?.structuredContent || (value?.usage ? { usage: value.usage } : undefined); return output({ jsonrpc: '2.0', id: req.id, result: { content: [{ type: 'text', text: typeof value === 'string' ? value : value.text }], ...(structuredContent ? { structuredContent } : {}) } }); } catch (error) { return output({ jsonrpc: '2.0', id: req.id, result: { isError: true, content: [{ type: 'text', text: error.message }] } }); } }
-    return output({ jsonrpc: '2.0', id: req.id, error: { code: -32601, message: 'Method not found' } });
-  } catch { return output({ jsonrpc: '2.0', id: req?.id ?? null, error: { code: -32700, message: 'Invalid request' } }); }
-})().catch((error) => console.error('[de-saram-mcp]', error.message)); });
+export async function dispatchMcpRequest(req) {
+  const response = (result) => ({ jsonrpc: '2.0', id: req.id, result });
+  if (req.method === 'initialize') return response({ protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'de-saram-legal', version: '0.2.0' } });
+  if (req.method === 'notifications/initialized') return undefined;
+  if (req.method === 'ping') return response({});
+  if (req.method === 'tools/list') return response({ tools: definitions });
+  if (req.method === 'tools/call') {
+    try {
+      currentChat();
+      const value = await call(req.params?.name, req.params?.arguments || {}, req.params?._meta?.progressToken);
+      const structuredContent = value?.structuredContent || (value?.usage ? { usage: value.usage } : undefined);
+      return response({ content: [{ type: 'text', text: typeof value === 'string' ? value : value.text }], ...(structuredContent ? { structuredContent } : {}) });
+    } catch (error) {
+      return response({ isError: true, content: [{ type: 'text', text: error.message }] });
+    }
+  }
+  return req.id === undefined ? undefined : { jsonrpc: '2.0', id: req.id, error: { code: -32601, message: 'Method not found' } };
+}
+
+if (direct) readline.createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => {
+  if (!line.trim()) return;
+  let message;
+  try { message = JSON.parse(line); }
+  catch { output({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Invalid request' } }); return; }
+  void dispatchMcpRequest(message).then((result) => { if (result) output(result); }).catch(() => {
+    if (message.id !== undefined) output({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: 'The legal tool failed.' } });
+  });
+});

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { workspaceRoot } from './artifacts.mjs';
+import { currentChat, readChatText } from './chat-scope.mjs';
 import { catalogEntry, checkOriginals, readIndexedText, searchCatalog } from './drafting-catalog.mjs';
 
 export async function searchPrecedents(args) { return searchCatalog(args); }
@@ -44,8 +44,9 @@ export async function copyTemplate(args) {
   const bytes = Buffer.concat(chunks);
   const digest = createHash('sha256').update(bytes).digest('hex');
   if (digest !== response.headers.get('x-source-sha256') || bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw Error('Original DOCX failed integrity verification');
-  const root = await realpath(workspaceRoot());
-  const active = process.env.JUNIOR_DE_SARAM_ACTIVE_WORKSPACE || args.workspace_path;
+  const chat = currentChat();
+  const root = await realpath(chat.folders.workspace);
+  const active = chat.requestWorkspace || (chat.native ? process.env.JUNIOR_DE_SARAM_ACTIVE_WORKSPACE : undefined);
   if (!active) throw Error('Supply the current conversation workspace');
   const workspace = await realpath(path.resolve(String(active)));
   const relative = path.relative(root, workspace);
@@ -68,11 +69,10 @@ export async function copyTemplate(args) {
 }
 
 export async function validateDraft(args) {
-  const root = await realpath(workspaceRoot());
-  const file = await realpath(path.resolve(String(args.file_path || '')));
-  if (!file.startsWith(`${root}${path.sep}`) || !/\.(md|txt)$/i.test(file)) throw Error('Draft source must be Markdown or text inside the conversation workspace.');
-  if ((await stat(file)).size > 2 * 1024 * 1024) throw Error('Draft source exceeds validation limit.');
-  const text = await readFile(file, 'utf8');
+  const file = path.resolve(String(args.file_path || ''));
+  if (!/\.(md|txt)$/i.test(file)) throw Error('Draft source must be Markdown or text inside the conversation workspace.');
+  const text = await readChatText(file, { only: ['workspace'] });
+  if (Buffer.byteLength(text) > 2 * 1024 * 1024) throw Error('Draft source exceeds validation limit.');
   if (!text.trim()) throw Error('Draft source is empty.');
   const placeholders = [...text.matchAll(/\[(?:FILL|TODO|ASSUMED|NAME|DATE|ADDRESS|AMOUNT)(?::[^\]]*)?\]|\b(?:TBD|TO BE CONFIRMED)\b/gi)].map((match) => match[0]);
   return { file_path: file, word_count: (text.match(/[\p{L}\p{N}]+/gu) || []).length, headings: [...text.matchAll(/^#{1,6}\s+(.+)$/gm)].map((match) => match[1]), placeholders, instruction: 'Resolve or disclose placeholders and check all legal propositions against actual authorities before publishing.' };

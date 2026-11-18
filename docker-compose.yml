@@ -1,33 +1,103 @@
 services:
   junior-de-saram:
-    build: .
+    build:
+      context: .
+      target: bridge
     image: junior-de-saram:local
     container_name: junior-de-saram
+    restart: unless-stopped
     env_file: .env
     environment:
-      JUNIOR_DE_SARAM_LOG_ROOT: /data/logs
+      JUNIOR_DE_SARAM_PORT: "8160"
+      JUNIOR_DE_SARAM_DATA_ROOT: /data
+      JUNIOR_DE_SARAM_SESSION_DIR: /data/sessions
       JUNIOR_DE_SARAM_UPLOAD_ROOT: /data/uploads
+      JUNIOR_DE_SARAM_WORKSPACE_ROOT: /data/workspaces
+      JUNIOR_DE_SARAM_ARTIFACT_ROOT: /data/artifacts
+      JUNIOR_DE_SARAM_LOG_ROOT: /data/logs
       JUNIOR_DE_SARAM_KB_ROOT: /data/private-wiki
       JUNIOR_DE_SARAM_CATALOG_ROOT: /data/private-wiki
       JUNIOR_DE_SARAM_ATTACHMENT_ORIGINS: ${JUNIOR_DE_SARAM_ATTACHMENT_ORIGINS:-http://api:3080,http://librechat:3080}
+      DS_PI_EXECUTOR: container
+      DS_RUNNER_URL: http://junior-de-saram-runner:8162
+      DS_RUNNER_SECRET: ${DS_RUNNER_SECRET:?Set DS_RUNNER_SECRET in .env}
+      DS_GATEWAY_HOST: 0.0.0.0
+      DS_GATEWAY_PORT: ${DS_GATEWAY_PORT:-8161}
+      DS_SLOTS: ${DS_SLOTS:-3}
     ports:
       - "127.0.0.1:8160:8160"
     volumes:
-      - junior_de_saram_sessions:/data/sessions
-      - junior_de_saram_workspaces:/data/workspaces
-      - junior_de_saram_artifacts:/data/artifacts
-      - junior_de_saram_uploads:/data/uploads
-      - ./junior-de-saram/logs:/data/logs
-      - ${JUNIOR_DE_SARAM_WIKI_HOST_PATH:-./junior-de-saram/private-wiki}:/data/private-wiki
+      - type: bind
+        source: ${DS_HOST_DATA_ROOT:?Set DS_HOST_DATA_ROOT in .env}
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./junior-de-saram/logs
+        target: /data/logs
+      - type: bind
+        source: ${JUNIOR_DE_SARAM_WIKI_HOST_PATH:-./junior-de-saram/private-wiki}
+        target: /data/private-wiki
     networks:
       - librechat
+      - ds-control
+    depends_on:
+      - junior-de-saram-runner
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    memswap_limit: 2g
+    sysctls:
+      net.ipv4.ip_forward: 0
+
+  junior-de-saram-runner:
+    build:
+      context: .
+      target: runner
+    image: junior-de-saram-runner:local
+    container_name: junior-de-saram-runner
     restart: unless-stopped
-volumes:
-  junior_de_saram_sessions:
-  junior_de_saram_workspaces:
-  junior_de_saram_artifacts:
-  junior_de_saram_uploads:
+    environment:
+      DS_RUNNER_SECRET: ${DS_RUNNER_SECRET:?Set DS_RUNNER_SECRET in .env}
+      DS_HOST_DATA_ROOT: ${DS_HOST_DATA_ROOT:?Set DS_HOST_DATA_ROOT in .env}
+      DS_BRIDGE_CONTAINER: junior-de-saram
+      DS_GATEWAY_PORT: ${DS_GATEWAY_PORT:-8161}
+      DS_SLOTS: ${DS_SLOTS:-3}
+      DS_MAX_RUNS_PER_USER: ${DS_MAX_RUNS_PER_USER:-2}
+      DS_PI_IMAGE: junior-de-saram-pi:local
+    user: "1000:1000"
+    group_add:
+      - ${DS_DOCKER_GID:?Set DS_DOCKER_GID in .env}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - ds-control
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    memswap_limit: 256m
+
+  junior-de-saram-pi:
+    profiles: ["pi-image"]
+    build:
+      context: .
+      target: pi-sandbox
+    image: junior-de-saram-pi:local
+
 networks:
   librechat:
     external: true
-    name: librechat_default
+    name: ${LIBRECHAT_NETWORK:-librechat_default}
+  ds-control:
+    name: ds-control
+    internal: true

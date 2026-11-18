@@ -25,11 +25,11 @@ function clean(value, key = '') {
   return value;
 }
 
-export function createTrace({ id = `chatcmpl-${randomUUID()}`, key, query, attachments = [], model, provider, thinking }) {
+export function createTrace({ id = `chatcmpl-${randomUUID()}`, key, userHash, query, attachments = [], model, provider, thinking }) {
   const start = Date.now();
   const stamp = new Date(start).toISOString();
   const dir = path.join(root(), 'traces', stamp.slice(0, 10), id);
-  const trace = { schema_version: 1, trace: { request_id: id, session_id: `junior-de-saram-${key}`, conversation_key: `junior-de-saram-${key}`, source: 'junior-de-saram', started_at: stamp, outcome: 'running' }, request: { model, provider, thinking, original_query: clean(query), attachments: attachments.map((file) => ({ stored_path: file })) }, timeline: [], llm_calls: [], tool_calls: [], final: undefined };
+  const trace = { schema_version: 1, trace: { request_id: id, session_id: `junior-de-saram-${key}`, conversation_key: `junior-de-saram-${key}`, user_hash: userHash, source: 'junior-de-saram', started_at: stamp, outcome: 'running' }, request: { model, provider, thinking, original_query: clean(query), attachments: attachments.map((file) => ({ stored_path: file })) }, timeline: [], llm_calls: [], tool_calls: [], final: undefined };
   const pending = new Map();
   let queue = Promise.resolve();
   const save = (record) => { queue = queue.then(async () => { await mkdir(dir, { recursive: true }); if (record) await appendFile(path.join(dir, 'events.jsonl'), `${JSON.stringify(clean(record))}\n`); await writeFile(path.join(dir, 'trace.json'), `${JSON.stringify(clean(trace), null, 2)}\n`); }).catch((error) => console.error('[junior-de-saram][trace]', error.message)); return queue; };
@@ -45,7 +45,20 @@ export function createTrace({ id = `chatcmpl-${randomUUID()}`, key, query, attac
         if (item) { item.updates.push(clean(eventData.partialResult)); event('tool_updated', { tool: item.name, tool_call_id: item.id }); }
       } else if (eventData.type === 'tool_execution_end') {
         const item = pending.get(eventData.toolCallId);
-        if (item) { item.status = eventData.isError ? 'error' : 'completed'; item.ended_at = new Date().toISOString(); item.duration_ms = Date.now() - Date.parse(item.started_at); item.response = clean(eventData.result); event(item.status === 'error' ? 'tool_error' : 'tool_completed', { tool: item.name, tool_call_id: item.id, duration_ms: item.duration_ms }); }
+        if (item) {
+          item.status = eventData.isError ? 'error' : 'completed'; item.ended_at = new Date().toISOString(); item.duration_ms = Date.now() - Date.parse(item.started_at); item.response = clean(eventData.result);
+          if (/de_saram_precedent_(?:read|search)$|de_saram_template_copy$/.test(item.name || '')) {
+            const text = eventData.result?.content?.find((part) => part.type === 'text')?.text;
+            try {
+              const source = JSON.parse(text);
+              if (source.source_use) item.source_use = source.source_use;
+              if (source.source_record_id) item.source_record_id = source.source_record_id;
+              if (source.classification) item.source_classification = source.classification;
+              if (Array.isArray(source.candidates)) item.source_candidates = source.candidates.map(({ id, classification, original }) => ({ id, classification, original_availability: original?.availability }));
+            } catch { /* A non-JSON result is already retained in item.response. */ }
+          }
+          event(item.status === 'error' ? 'tool_error' : 'tool_completed', { tool: item.name, tool_call_id: item.id, duration_ms: item.duration_ms, source_use: item.source_use, source_record_id: item.source_record_id });
+        }
       } else if (eventData.type === 'message_end' && eventData.message?.role === 'assistant') {
         const message = eventData.message;
         trace.llm_calls.push({ at: new Date().toISOString(), provider: message.provider, model: message.model, stop_reason: message.stopReason, usage: clean(message.usage), response: clean(message) });

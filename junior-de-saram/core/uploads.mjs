@@ -1,10 +1,10 @@
-import { createHash, createHmac } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { resolveChatScope } from './chat-scope.mjs';
 
 const maxFile = Number(process.env.JUNIOR_DE_SARAM_MAX_FILE_BYTES || 50 * 1024 * 1024);
-const root = () => path.resolve(process.env.JUNIOR_DE_SARAM_UPLOAD_ROOT || './junior-de-saram/uploads');
 
 function safeName(value, fallback = 'uploaded-document') {
   let name;
@@ -13,10 +13,7 @@ function safeName(value, fallback = 'uploaded-document') {
 }
 
 export function conversationKey(req, body) {
-  const conversation = req.headers['x-librechat-conversation-id'] || body.conversation_id || body.conversationId;
-  const user = req.headers['x-librechat-user-id'] || 'anonymous';
-  const stable = conversation || createHash('sha256').update(JSON.stringify(body.messages || [])).digest('hex').slice(0, 24);
-  return createHmac('sha256', process.env.JUNIOR_DE_SARAM_API_KEY || 'local-session').update(`${user}:${stable}`).digest('hex').slice(0, 32);
+  return resolveChatScope(req.headers, body).chatHash;
 }
 
 export function latestUser(messages = []) { return [...messages].reverse().find((message) => message?.role === 'user') || {}; }
@@ -115,8 +112,7 @@ async function retain(directory, manifest, { bytes, filename, sourceId = '' }) {
   return { path: file, isNew };
 }
 
-export async function saveUploads(key, candidates, extracted, fetcher = fetch) {
-  const directory = path.join(root(), key);
+export async function saveUploads(directory, candidates, extracted, fetcher = fetch) {
   await mkdir(directory, { recursive: true });
   const manifest = await loadManifest(directory);
   const paths = [];
@@ -134,8 +130,7 @@ export async function saveUploads(key, candidates, extracted, fetcher = fetch) {
   return paths;
 }
 
-export async function conversationUploadPaths(key) {
-  const directory = path.join(root(), key);
+export async function conversationUploadPaths(directory) {
   try { return (await readdir(directory, { withFileTypes: true })).filter((entry) => entry.isFile() && !entry.name.startsWith('.')).map((entry) => path.join(directory, entry.name)).sort(); }
   catch (error) { if (error.code === 'ENOENT') return []; throw error; }
 }

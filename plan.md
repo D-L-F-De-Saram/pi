@@ -1,5 +1,39 @@
 # Junior De Saram: Pi-based assistant plan
 
+## Approved hosted security migration (2026-11-17)
+
+The hosted service will adopt Junior Silva's security boundaries while preserving De Saram research, drafting, catalog, document generation, and logging behavior. This section records the approved implementation plan; it does not authorize changing firm databases or source documents.
+
+1. Require trusted LibreChat user and conversation headers. Reject missing, placeholder, or mismatched identities. Use a separate identity secret to derive user and chat folders. Migrate existing sessions deliberately and verify the trust boundary at LibreChat.
+2. Split the hosted runtime into a credential-holding bridge, a Docker runner with no application credentials, and a minimal Pi image with no bridge code or credentials. Use De Saram-specific secrets, host data path, labels, ports, slot networks, and subnets. Harden bridge and runner containers.
+3. Start one gVisor (`runsc`) Pi container per message. Mount only that chat's uploads and artifacts read-only and workspace and sessions read-write. Give each message a request folder and fresh in-memory Pi settings. Keep the private drafting catalog out of Pi's mounts.
+4. Forward Pi tool requests to bridge-side handlers through a short-lived run token bound to the chat and the originating slot. Make every file-taking handler use server-owned chat context, not a Pi-supplied workspace path. Preserve read-only source access and copy original DOCX templates into the chat workspace without altering the originals.
+5. Proxy model requests through the bridge. Keep real provider keys there; allow only tested provider/model routes and request shapes. Route firm research, Typesense, the file server, source gateway, Serper, and Exa through the bridge. Pi's slot network has no direct external or host access.
+6. Bind artifact links to user, chat, operation, file, and expiry. Preserve previews and administrator traces with protected storage, redaction, and retention. Add request and tool-call limits, CPU, memory, process, and time limits. Treat in-process `node:vm` as untrusted and move code evaluation to a restricted execution boundary or replace it.
+7. Port the unit and live isolation checks, including cross-user file access, template copies, artifact links, provider secrets, network reachability, model switching, cancellation, concurrency, and document generation. Scan images and build history for secrets. Run disruptive checks only in a maintenance window.
+
+The reference implementation is `D:/Intern/Work/Untouched/pi`. Its hosted architecture uses a bridge, runner, and per-message gVisor Pi container. Its identities, filesystem checks, token-bound gateway, model proxy, signed links, resource limits, and image isolation are described in the accompanying code. The reference's live isolation script marks the answer filter, public document fetch, disk watchdog, and some functional/browser checks as later; they are not assumed to be implemented.
+
+Junior De Saram initially runs Pi as a child of its API process with inherited service environment and shared mounts. Its current conversation key permits an anonymous fallback. Its full traces contain prompt and tool content, and its `node:vm` data runner is not a security sandbox. These gaps drive this migration. Native CLI use remains a separate single-developer path; hosted security claims apply to the container executor.
+
+### Implementation map and verification
+
+| Security boundary | Junior De Saram implementation | Check |
+| --- | --- | --- |
+| Trusted user/chat identity | `core/chat-scope.mjs`; HMAC using `DS_IDENTITY_SECRET`; strict LibreChat headers | Missing/placeholder IDs fail; two users sharing a chat ID get different folders |
+| Per-chat storage | `core/chat-scope.mjs`, `core/uploads.mjs`, `core/artifacts.mjs`; `DS_HOST_DATA_ROOT/users/<user-hash>/chats/<chat-hash>/` | A file-taking tool cannot read a second chat's file |
+| Split services | `Dockerfile`, `docker-compose.yml`; bridge, Docker runner, minimal Pi image | Inspect image contents, mounts, networks, and environment |
+| Pi sandbox | `runner/docker-args.mjs`, `runner/slots.mjs`, `deploy/pi-entrypoint.sh`; `runsc`, private isolated slot, per-message tmpfs, read-only root, resource limits | Runner health and live Docker/inside-sandbox checks |
+| Token-bound tools and models | `server/run-tokens.mjs`, `server/gateway.mjs`, `server/model-proxy.mjs`, `mcp/sandbox-launcher.mjs` | Wrong token/address/provider/model refused; server tools and remote file references refused |
+| Bridge-owned source handling | `mcp/server.mjs`, `core/precedents.mjs`, `core/drafting-catalog.mjs`; source catalog only in bridge | Template copy stays in chat workspace; original repository unchanged |
+| Artifact delivery | `core/artifacts.mjs`, `server/openai.mjs`; HMAC link with user/chat/operation/file/expiry | Link succeeds and tampered/expired link fails |
+| Limits | `DS_SLOTS`, `DS_MAX_RUNS_PER_USER`, slot wait and run timeout; runner Docker CPU/memory/PID caps | Concurrency, cancellation, and cleanup checks |
+| Logging | `core/trace.mjs`; bridge-only full trace, redact secrets, identify user hash and source use | Research/sample/template calls and token usage visible to admin |
+
+The code migration is complete, with targeted Linux unit tests and a tested one-chat legacy migration utility. On 2026-11-17, the laptop's native WSL Docker Engine was configured with `runsc`; an ephemeral gVisor container passed the runtime check without restarting existing containers. Local `.env`, the active LibreChat model allowlist, and the private host data directory are configured. A Docker image build and live gVisor/LibreChat tests remain for the operator, who asked to perform rebuild/restart personally. `SECURITY_DEPLOYMENT.md` gives the environment, build, start, verification, and optional explicit old-chat migration steps. The old named volumes are retained; never delete them during this rollout.
+
+### Historical initial plan (superseded by later work)
+
 The new Junior De Saram would be a separate Pi-based legal assistant, modelled on Junior Silva’s architecture but initially given only three specialist capabilities: the firm’s existing researcher, the existing document drafter, and public web search. The firm’s indexed data would remain on the De Saram server; there would be no need to recreate it locally.
 
 Pi would decide which capability to use based on the request and the tool descriptions. We would not prescribe a fixed research → drafting workflow.
