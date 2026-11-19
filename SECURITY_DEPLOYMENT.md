@@ -36,7 +36,7 @@ DESARAM_DRAFTING_SOURCE_URL=http://127.0.0.1:18130
 DESARAM_DRAFTING_SOURCE_TOKEN=<same-token-as-upload-process-service>
 ```
 
-The `PI_PROVIDER`/`PI_MODEL` default must be in `DS_ALLOWED_MODELS`, and a real provider API key must be configured for each listed provider. The bridge currently proxies Anthropic and Google; OpenAI selections are not exposed through this hosted path. Generate each secret separately with `openssl rand -hex 32` and paste it privately into `.env`. Preserve `DS_IDENTITY_SECRET` across restarts because changing it changes all user/chat folder hashes. Preserve the artifact secret for the lifetime of existing download links.
+The `PI_PROVIDER`/`PI_MODEL` default must be in `DS_ALLOWED_MODELS`, and a real API key must be configured for each listed provider. The bridge proxies Anthropic, Google, and OpenAI Responses. To offer OpenAI, set `OPENAI_API_KEY` in the bridge's private `.env` and append a catalog model such as `openai/gpt-6.1-sol` to `DS_ALLOWED_MODELS`. Add the same entry to LibreChat's allowlist. The Pi containers receive only their run token. Generate each local signing secret separately with `openssl rand -hex 32`. Preserve the identity and artifact signing secrets across restarts.
 
 `DS_SLOTS` limits **simultaneous Pi containers overall**. `DS_MAX_RUNS_PER_USER` limits **simultaneous runs for one user** (default 2, as in Junior Silva). These are concurrency limits, not a cap on saved Pi sessions or LibreChat conversations. Requests for one chat are serialized. The runner queues when all slots are busy and returns a busy response after `DS_SLOT_WAIT_MS`.
 
@@ -44,7 +44,7 @@ Set `JUNIOR_DE_SARAM_WIKI_HOST_PATH` to the existing private catalog directory. 
 
 If the original DOCX gateway is not deployed/configured, catalog search and Markdown/sample-based drafting continue to work, but `de_saram_template_copy` cannot retrieve a verified original template. Do not claim that a template was copied in that state. This security migration does not change the source service or its database.
 
-For the model picker, set LibreChat's Junior De Saram Pi endpoint `piAllowedModels` to `${JUNIOR_DE_SARAM_ALLOWED_MODELS}` and put the same provider/model list in LibreChat's `.env`. Its current `${JUNIOR_SILVA_ALLOWED_MODELS}` includes OpenAI models, which this bridge intentionally does not proxy. Keep its existing `headers`, `resendFiles: false`, `piModelPicker`, `piDefaultModel`, and `piDefaultEffort` settings.
+For the model picker, set LibreChat's Junior De Saram Pi endpoint `piAllowedModels` to `${JUNIOR_DE_SARAM_ALLOWED_MODELS}` and put the same provider/model list in LibreChat's `.env`. Keep its existing `headers`, `resendFiles: false`, `piModelPicker`, `piDefaultModel`, and `piDefaultEffort` settings.
 
 ## Build and start (run yourself)
 

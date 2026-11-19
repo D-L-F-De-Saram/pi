@@ -9,7 +9,7 @@ const HASH = /^[0-9a-f]{32}$/;
 const REQUEST_ID = /^chatcmpl-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MODEL = /^[a-z0-9][a-z0-9.-]{0,63}$/;
 // The providers the bridge's model proxy has a route for.
-const PROVIDERS = new Set(["anthropic", "google"]);
+const PROVIDERS = new Set(["anthropic", "google", "openai"]);
 // Pi's own list (packages/coding-agent/src/cli/args.ts, VALID_THINKING_LEVELS).
 const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 // An absolute path of plain characters. No commas, because Docker's --mount syntax splits on them.

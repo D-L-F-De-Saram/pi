@@ -9,6 +9,7 @@ import { startChatStream, streamChatDelta as delta, finishChatStream as finish }
 import { runtimeArgs } from '../core/runtime.mjs';
 import { artifactDownload } from '../core/artifacts.mjs';
 import { publicCitationText, sourceCitationText } from '../core/source-citations.mjs';
+import { deliverPreviews, rememberPreview } from '../core/preview-delivery.mjs';
 import { conversationUploadPaths, fileCandidates, piPrompt, saveUploads, textUploads } from '../core/uploads.mjs';
 import { syncCatalog } from '../core/drafting-catalog.mjs';
 import { createChatFolders, currentChat, resolveChatScope, runInChat } from '../core/chat-scope.mjs';
@@ -142,7 +143,7 @@ async function run(chat, requestId, prompt, onProgress, trace, choice, signal) {
 
 async function collectRun(pi, onProgress, trace) {
   const thoughts = thoughtController(onProgress); const ticker = setInterval(() => thoughts.tick(), 5000); ticker.unref();
-  let answer = ''; const research = []; const previews = []; const trustedDraftPaths = new Set(); let deliverablePrepared = false; let researchFailed = false; let sourceCall = 0; const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  let answer = ''; const research = []; const previews = new Map(); const trustedDraftPaths = new Set(); let deliverablePrepared = false; let researchFailed = false; let sourceCall = 0; const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   const lines = readline.createInterface({ input: pi.stdout });
   for await (const line of lines) {
     let event; try { event = JSON.parse(line); } catch { continue; }
@@ -156,7 +157,7 @@ async function collectRun(pi, onProgress, trace) {
       if (/de_saram_document_drafter$/.test(name)) {
         for (const match of citedResult(event).matchAll(/https:\/\/www\.dev\.desaram\.ai(\/files\/[A-Za-z0-9/_\-.]+\.docx)/g)) trustedDraftPaths.add(match[1]);
       }
-      if (/prepare_document_preview$|workbench_publish_artifact$/.test(name)) { const preview = previewResult(event); if (typeof preview?.artifact_markup === 'string' && preview.artifact_markup.startsWith(':::artifact{')) previews.push(preview.artifact_markup); deliverablePrepared = true; }
+      if (/prepare_document_preview$|workbench_publish_artifact$/.test(name)) { rememberPreview(previews, previewResult(event), name); deliverablePrepared = true; }
     }
     if (event.type === 'message_end' && event.message?.role === 'assistant') {
       const message = event.message; const content = textOf(message.content);
@@ -168,7 +169,7 @@ async function collectRun(pi, onProgress, trace) {
   if (ending.exitCode !== 0 || !answer.trim()) throw Error(`Pi did not complete this request (${ending.exitCode ?? ending.reason})`);
   if (researchFailed && !research.length && !deliverablePrepared) answer = 'I could not reach the firm’s legal sources for this request, so I cannot give a sourced answer yet. Please retry once the research service is connected.';
   answer = restoreCitations(answer, research, { fallbackToResearch: !deliverablePrepared });
-  for (const markup of previews) if (!answer.includes(markup)) answer += `\n\n${markup}`;
+  answer = deliverPreviews(answer, previews);
   return { answer: localDownloads(answer, trustedDraftPaths), usage };
 }
 function inConversation(key, task) { const previous = serial.get(key) || Promise.resolve(); const next = previous.catch(() => undefined).then(task); serial.set(key, next); next.finally(() => { if (serial.get(key) === next) serial.delete(key); }).catch(() => undefined); return next; }

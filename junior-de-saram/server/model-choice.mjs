@@ -64,6 +64,9 @@ export function loadModelChoices(settings = process.env) {
 		if (!read(keySetting)) throw new Error(`${keySetting} is not configured in .env. ${key} needs it.`);
 		const model = catalogModel(provider, id);
 		if (!model) throw new Error(`${key} isn't in Pi's model catalog in this image, so Pi can't use it.`);
+		if (provider === "openai" && model.api !== "openai-responses") {
+			throw new Error(`${key} isn't an OpenAI Responses model supported by the bridge.`);
+		}
 		models.set(key, describe(model));
 	}
 	if (!models.has(defaultKey)) throw new Error(`PI_PROVIDER and PI_MODEL (${defaultKey}) are the default model, so DS_ALLOWED_MODELS must include them.`);

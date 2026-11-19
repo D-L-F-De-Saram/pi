@@ -99,7 +99,7 @@ async function openChatFile(filename, { only, flags = constants.O_RDONLY } = {})
 		if (info.size > MAX_FILE_BYTES) throw Object.assign(new Error(`${name} exceeds the 50 MB input limit`), { refused: true });
 		const bytes = Buffer.alloc(info.size);
 		const { bytesRead } = await handle.read(bytes, 0, info.size, 0);
-		return { handle, absolute, name, bytes: bytes.subarray(0, bytesRead) };
+		return { handle, absolute, realPath: real, name, bytes: bytes.subarray(0, bytesRead) };
 	} catch (caught) {
 		await handle?.close();
 		throw caught?.refused ? caught : new Error(FILE_NOT_FOUND);

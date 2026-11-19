@@ -24,6 +24,7 @@ const KEY_HEADERS = { anthropic: "x-api-key", google: "x-goog-api-key" };
 export function modelCallRoute(method, url) {
 	if (method !== "POST") return undefined;
 	if (ANTHROPIC_ROUTES.has(url)) return { provider: "anthropic" };
+	if (url === "/model/openai/responses") return { provider: "openai" };
 	const match = GOOGLE_ROUTE.exec(String(url));
 	return match ? { provider: "google", pathModel: match[1] } : undefined;
 }
@@ -78,7 +79,7 @@ export function startGateway({ port = GATEWAY_PORT, host = GATEWAY_HOST, dispatc
 			if (!modelCall && (req.method !== "POST" || req.url !== "/internal/mcp")) return reply(res, 404, { error: "Not found" });
 			const provider = modelCall?.provider;
 			// Pi sends its run token as a bearer token to the tools, and as the API key to the model.
-			const token = modelCall ? String(req.headers[KEY_HEADERS[provider]] || "") : bearerToken(req);
+			const token = KEY_HEADERS[provider] ? String(req.headers[KEY_HEADERS[provider]] || "") : bearerToken(req);
 			const run = runForToken(token, req.socket.remoteAddress);
 			if (!run) return modelCall ? providerError(provider, res, 401, "authentication_error", "A valid run token is required") : reply(res, 401, { error: "A valid run token is required" });
 			// A run may call only the provider it was started with. The other provider's route is closed to it.

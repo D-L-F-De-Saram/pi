@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ToolResultEvent } from '@earendil-works/pi-coding-agent';
 import { restoreCitations } from '../../junior-de-saram/core/citations.mjs';
 import { publicCitationText, sourceCitationText } from '../../junior-de-saram/core/source-citations.mjs';
+import { deliverPreviews, rememberPreview, stripPreviewMarkup } from '../../junior-de-saram/core/preview-delivery.mjs';
 
 type Artifact = { download_url?: unknown };
 
@@ -9,13 +10,6 @@ function structured(event: ToolResultEvent): Record<string, unknown> | undefined
   const outer = event.structuredContent as Record<string, unknown>;
   const nested = outer.structuredContent;
   return nested && typeof nested === 'object' && !Array.isArray(nested) ? nested as Record<string, unknown> : outer;
-}
-
-function previewResults(event: ToolResultEvent): string[] {
-  const value = structured(event);
-  if (!value) return [];
-  const values = [value.artifact_markup, ...(Array.isArray(value.artifact_markups) ? value.artifact_markups : [])];
-  return values.filter((markup): markup is string => typeof markup === 'string' && markup.startsWith(':::artifact{'));
 }
 
 function artifactRows(event: ToolResultEvent): Array<{ label: string; url: string }> {
@@ -32,7 +26,7 @@ function isPreviewTool(name: string) {
 
 function removeUntrustedHtmlPreview(text: string) {
   // Only renderer-produced :::artifact markup may drive the LibreChat canvas.
-  return text.replace(/:::artifact\{[\s\S]*?\n:::/g, '').replace(/<!doctype\s+html[\s\S]*?<\/html>/gi, '')
+  return stripPreviewMarkup(text)
     .split('\n').filter((line) => !/(?:local_path|file_uri|\/data\/(?:artifacts|uploads|workspace)|\/app\/)/i.test(line))
     .join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
@@ -42,11 +36,11 @@ function removeUntrustedHtmlPreview(text: string) {
 // signed image URLs from a tool response.
 export default function deSaramDelivery(pi: ExtensionAPI) {
   let research: string[] = [];
-  let pending: string[] = [];
+  const pending = new Map();
   let downloads: Array<{ label: string; url: string }> = [];
   let deliverablePrepared = false;
   let sourceCall = 0;
-  pi.on('agent_start', () => { research = []; pending = []; downloads = []; deliverablePrepared = false; sourceCall = 0; });
+  pi.on('agent_start', () => { research = []; pending.clear(); downloads = []; deliverablePrepared = false; sourceCall = 0; });
   pi.on('tool_result', (event) => {
     if (event.isError) return;
     const text = event.content.filter((part) => part.type === 'text').map((part) => part.text || '').join('\n');
@@ -55,7 +49,7 @@ export default function deSaramDelivery(pi: ExtensionAPI) {
     if (event.toolName.endsWith('public_web_search') || event.toolName.endsWith('deep_public_web_research')) research.push(publicCitationText(text, `public-${++sourceCall}`));
     if (!isPreviewTool(event.toolName)) return;
     deliverablePrepared = true;
-    for (const markup of previewResults(event)) if (!pending.includes(markup)) pending.push(markup);
+    rememberPreview(pending, structured(event), event.toolName);
     for (const row of artifactRows(event)) if (!downloads.some((item) => item.url === row.url)) downloads.push(row);
   });
   pi.on('message_end', (event) => {
@@ -66,8 +60,7 @@ export default function deSaramDelivery(pi: ExtensionAPI) {
     const safeText = removeUntrustedHtmlPreview(answer);
     const links = downloads.filter((item) => !safeText.includes(item.url)).map((item) => `- [${item.label}](${item.url})`);
     const delivery = links.length ? `## Files\n\n${links.join('\n')}` : '';
-    const previews = pending.filter((markup) => !safeText.includes(markup)).join('\n\n');
-    const delivered = [safeText, delivery, previews].filter(Boolean).join('\n\n').trim();
+    const delivered = deliverPreviews([safeText, delivery].filter(Boolean).join('\n\n'), pending);
     if (delivered !== text) return { message: { ...event.message, content: [{ type: 'text', text: delivered }] } };
   });
 }

@@ -4,6 +4,7 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { chatFolders, currentChat, readChatFile } from './chat-scope.mjs';
 
 const execute = promisify(execFile);
@@ -11,6 +12,7 @@ const types = { '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlform
 const downloadTypes = { ...types, '.png': 'image/png' };
 export const workspaceRoot = () => path.resolve(process.env.JUNIOR_DE_SARAM_WORKSPACE_ROOT || './junior-de-saram/workspaces');
 const artifactRoot = () => currentChat().folders.artifacts;
+const requestPreviews = new WeakMap();
 function signature(userHash, chatHash, operationId, filename, expiresAt) {
   const secret = process.env.JUNIOR_DE_SARAM_ARTIFACT_SECRET;
   if (!secret) throw Error('Artifact signing secret is missing');
@@ -50,18 +52,51 @@ export async function materializePreviewImages(html, operationId) {
   return `${fragments.join('')}${html.slice(cursor)}`;
 }
 
-export async function localPreview(file) {
-  const source = await localPath(file, ['workspace', 'artifacts']);
+async function renderPreview(source, name) {
   const operationId = `preview-${randomUUID()}`;
   const dir = path.join(artifactRoot(), operationId);
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  const resolved = path.join(dir, source.name);
+  const resolved = path.join(dir, name);
   await writeFile(resolved, source.bytes, { flag: 'wx', mode: 0o600 });
-  const { stdout } = await execute('python3', [new URL('../documents/preview.py', import.meta.url).pathname, resolved], { timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await execute('python3', [fileURLToPath(new URL('../documents/preview.py', import.meta.url)), resolved], { timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
   const title = path.basename(resolved).replace(/["\r\n<>]/g, ' ');
   const id = createHash('sha256').update(resolved).digest('hex').slice(0, 20);
   const html = await materializePreviewImages(stdout.trim(), operationId);
   return `:::artifact{identifier="de-saram-${id}" type="text/html" title="${title} — Preview"}\n\`\`\`\`html\n${html}\n\`\`\`\`\n:::`;
+}
+
+function previewsForRequest() {
+  const chat = currentChat();
+  let previews = requestPreviews.get(chat);
+  if (!previews) {
+    previews = { renders: new Map(), publishedPaths: new Map() };
+    requestPreviews.set(chat, previews);
+  }
+  return previews;
+}
+
+function previewIdentity(source, digest) {
+  return createHash('sha256').update(source.realPath).update('\0').update(digest).digest('hex');
+}
+
+async function previewFor(source, name, preview_key, previews) {
+  if (!previews.renders.has(preview_key)) {
+    // Share the in-flight render as well. A failed render can be retried.
+    previews.renders.set(preview_key, renderPreview(source, name).catch((error) => {
+      previews.renders.delete(preview_key);
+      throw error;
+    }));
+  }
+  return { preview_key, artifact_markup: await previews.renders.get(preview_key) };
+}
+
+export async function localPreview(file) {
+  const source = await localPath(file, ['workspace', 'artifacts']);
+  const previews = previewsForRequest();
+  const digest = createHash('sha256').update(source.bytes).digest('hex');
+  const published = previews.publishedPaths.get(source.realPath);
+  const key = published?.digest === digest ? published.key : previewIdentity(source, digest);
+  return { ...await previewFor(source, source.name, key, previews), file_path: source.absolute };
 }
 
 export async function publishArtifact(file) {
@@ -74,15 +109,19 @@ export async function publishArtifact(file) {
   await writeFile(resolved, source.bytes, { flag: 'wx', mode: 0o600 });
   let validation;
   if (/\.(pdf|docx|pptx|xlsx)$/i.test(resolved)) {
-    const { stdout } = await execute('python3', [new URL('../documents/validate.py', import.meta.url).pathname, resolved], { timeout: 120000, maxBuffer: 100000 });
+    const { stdout } = await execute('python3', [fileURLToPath(new URL('../documents/validate.py', import.meta.url)), resolved], { timeout: 120000, maxBuffer: 100000 });
     validation = JSON.parse(stdout);
     if (!validation.valid) throw Error(validation.error || 'Document validation failed');
   } else if (path.extname(resolved) === '.json') JSON.parse(await readFile(resolved, 'utf8'));
   const bytes = source.bytes;
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const preview_key = previewIdentity(source, sha256);
+  const previews = previewsForRequest();
+  previews.publishedPaths.set(resolved, { digest: sha256, key: preview_key });
   const download_url = signedUrl(operationId, name);
   let artifact_markup; let preview_warning;
-  try { artifact_markup = await localPreview(resolved); } catch { preview_warning = 'The validated original is downloadable; a preview could not be rendered.'; }
-  return { file_path: resolved, filename: name, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), download_url, validation, artifact_markup, preview_warning };
+  try { ({ artifact_markup } = await previewFor(source, name, preview_key, previews)); } catch { preview_warning = 'The validated original is downloadable; a preview could not be rendered.'; }
+  return { file_path: resolved, filename: name, bytes: bytes.length, sha256, download_url, validation, preview_key, artifact_markup, preview_warning };
 }
 
 export async function artifactDownload(req, res) {

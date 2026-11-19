@@ -31,7 +31,7 @@ COPY junior-de-saram/deploy/pi-libs/check-pi-packages.mjs /tmp/check-pi-packages
 RUN node /tmp/check-pi-packages.mjs && rm -rf /tmp/check-pi-packages.mjs /root/.npm
 COPY .pi/mcp.json ./.pi/mcp.json
 COPY .pi/extensions/junior-de-saram-context.ts .pi/extensions/junior-de-saram-scope-guard.ts .pi/extensions/de-saram-delivery.ts ./.pi/extensions/
-COPY junior-de-saram/core/tool-safety.mjs junior-de-saram/core/code-runner.mjs junior-de-saram/core/citations.mjs junior-de-saram/core/source-citations.mjs ./junior-de-saram/core/
+COPY junior-de-saram/core/tool-safety.mjs junior-de-saram/core/code-runner.mjs junior-de-saram/core/citations.mjs junior-de-saram/core/source-citations.mjs junior-de-saram/core/preview-delivery.mjs ./junior-de-saram/core/
 COPY junior-de-saram/mcp/sandbox-launcher.mjs ./junior-de-saram/mcp/server.mjs
 COPY .agents/skills/de-saram-legal-final-answer ./.agents/skills/de-saram-legal-final-answer
 COPY .agents/skills/de-saram-source-retrieval ./.agents/skills/de-saram-source-retrieval

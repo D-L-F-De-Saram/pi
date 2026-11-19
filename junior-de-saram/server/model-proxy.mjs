@@ -1,5 +1,6 @@
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { openaiCallProblem } from "./openai-model-policy.mjs";
 
 // Pi calls the model through here with its run token. The proxy checks the call, swaps the token for the
 // real key, and streams the answer back, so Pi never needs the key. Each run may call only the provider
@@ -10,6 +11,7 @@ const MAX_MODEL_BYTES = 32 * 1024 * 1024;
 export const MODEL_PROVIDERS = {
 	anthropic: { keySetting: "ANTHROPIC_API_KEY", upstream: "https://api.anthropic.com" },
 	google: { keySetting: "GEMINI_API_KEY", upstream: "https://generativelanguage.googleapis.com/v1beta" },
+	openai: { keySetting: "OPENAI_API_KEY", upstream: "https://api.openai.com/v1" },
 };
 
 // Every field Pi's Anthropic code can send (packages/ai/src/api/anthropic-messages.ts, buildParams), except
@@ -135,6 +137,10 @@ const GOOGLE_STATUS = { 400: "INVALID_ARGUMENT", 401: "UNAUTHENTICATED", 404: "N
 // The proxy's own refusals, in the shape of the provider Pi is calling, so Pi handles them as it would one
 // of that provider's errors.
 export function providerError(provider, res, status, type, message) {
+	if (provider === "openai") {
+		res.writeHead(status, { "Content-Type": "application/json" });
+		return res.end(JSON.stringify({ error: { type, message } }));
+	}
 	if (provider !== "google") return modelError(res, status, type, message);
 	const body = JSON.stringify({ error: { code: status, message, status: GOOGLE_STATUS[status] ?? "UNKNOWN" } });
 	res.writeHead(status, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) });
@@ -159,6 +165,11 @@ async function readModelCall(req) {
 
 // How each provider's checked call goes upstream: its address, and only the headers it needs, with the real key.
 const UPSTREAM_CALLS = {
+	openai: {
+		problem: (body, _req, settings) => openaiCallProblem(body, settings.model),
+		url: (upstream) => `${upstream}/responses`,
+		headers: (_incoming, apiKey) => ({ authorization: `Bearer ${apiKey}`, "content-type": "application/json", accept: "text/event-stream" }),
+	},
 	anthropic: {
 		problem: (body, req, settings) => modelCallProblem(body, req.headers, settings.model),
 		url: (upstream) => `${upstream}/v1/messages?beta=true`,
@@ -202,7 +213,8 @@ export async function proxyModelCall(req, res, { provider = "anthropic", chatHas
 	try {
 		// The body that was checked is the body that's sent. Forwarding the raw bytes would let a body with
 		// two "model" fields pass the check with one value and reach Anthropic with the other.
-		answer = await fetch(call.url(upstream.replace(/\/+$/, ""), model), { method: "POST", headers: call.headers(req.headers, apiKey), body: JSON.stringify(body), signal: cancel.signal });
+		if (provider === "openai" && body.prompt_cache_key !== undefined) body.prompt_cache_key = `de-saram-${chatHash}`;
+		answer = await fetch(call.url(upstream.replace(/\/+$/, ""), model), { method: "POST", headers: call.headers(req.headers, apiKey), body: JSON.stringify(body), redirect: "error", signal: cancel.signal });
 	} catch (error) {
 		if (cancel.signal.aborted) return;
 		console.error(`[junior-de-saram] The model service could not be reached for chat ${chatHash}: ${error?.cause?.code || error?.name || "unknown error"}`);
